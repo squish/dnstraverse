@@ -1,22 +1,39 @@
-module DNSCheck
-  require 'logger'
-  require 'singleton'
-  class Log
-    include Singleton
-    def initialize
-      @@logger = Logger.new(STDOUT)
-      @@logger.level = Logger::WARN
+require 'logger'
+
+module Log
+  include Logger::Severity
+  
+  class Formatter
+    Format = "%s, [%s #%d] %5s -- %s: %s\n"
+    
+    def call(severity, time, progname, msg)
+      t = time.strftime("%Y-%m-%dT%H:%M:%S.") << "%06d" % time.usec
+      msg2str(msg).split(/\n/).map do |m|
+        Format % [severity[0..0], t, $$, severity, progname, m]
+      end
     end
-    def set_logger(logger)
-      @@logger = logger
+    
+    def msg2str(msg)
+      case msg
+        when ::Exception
+        "#{ msg.message } (#{ msg.class })\n" <<
+         (msg.backtrace || []).join("\n")
+      else
+        msg.to_s
+      end
     end
-    def method_missing(key, *args)
-      @@logger.send(symbol, *args)
-    end
-    alias original_respond_to? respond_to?
-    def respond_to?(key)
-      original_respond_to?(key) or @@logger.respond_to?(key)
-    end
-    log = Log.new # create us
   end
+  
+  def self.level=(l)
+    @@logger.level = l
+  end
+  def self.logger=(logger)
+    @@logger = logger
+  end
+  def self.method_missing(key, *args, &b)
+    @@logger.send(key, *args, &b)
+  end
+  @@logger = Logger.new(STDERR)
+  @@logger.formatter = Formatter.new
+  @@logger.level = Logger::FATAL
 end
