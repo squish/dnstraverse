@@ -7,7 +7,8 @@ module Log
     Format = "%s, [%s #%d] %5s -- %s: %s\n"
     
     def call(severity, time, progname, msg)
-      t = time.strftime("%Y-%m-%dT%H:%M:%S.") << "%06d" % time.usec
+      #t = time.strftime("%Y-%m-%d %H:%M:%S.") << "%06d" % time.usec
+      t = ""
       msg2str(msg).split(/\n/).map do |m|
         Format % [severity[0..0], t, $$, severity, progname, m]
       end
