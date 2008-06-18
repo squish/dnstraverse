@@ -40,7 +40,7 @@
 def progress(args)
   mystate = args[:state]
   referral = args[:referral]
-  #printf "\r#{referral.to_s}..."
+  printf "\r#{referral.to_s}..."
 end
 
 if __FILE__ == $0

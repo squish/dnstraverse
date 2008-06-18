@@ -4,9 +4,9 @@ require 'Dnsruby/TheLog'
 require 'info_cache'
 require 'log'
 
-# TODO proper additional cache
 # TODO calculations
-# TODO negative stuff
+# TODO looping... root servers send me to m.gtld-servers.net which they don't
+# give an IP address for (with our packet size)
 
 module DNSCheck
   class ResolveError < RuntimeError
@@ -177,18 +177,23 @@ module DNSCheck
       return false
     end
     
-    def msg_bailiwick_additional(msg, bailiwick, type = :both)
+    def msg_cacheable(msg, bailiwick, type = :both)
       good, bad = Array.new, Array.new
-      ending = bailiwick ? '.' + bailiwick : ''
-      for rr in msg.additional do
-        if rr.name.to_s =~ /#{ending}$/i then # no ends_with? in 1.8
-          good.push rr
-        else
-          bad.push rr
+      bw = bailiwick.to_s
+      bwend = "." + bw
+      for section in [:additional, :authority] do
+        for rr in msg.send(section) do
+          name = rr.name.to_s
+          if bailiwick.nil? or name.casecmp(bw) == 0 or
+            name =~ /#{bwend}$/i then
+            good.push rr
+          else
+            bad.push rr
+          end
         end
       end
-      good.map {|rr| Log.debug { "Additional within bailiwick: " + rr.to_s } }
-      bad.map {|rr| Log.debug { "Additional outside bailiwick: " + rr.to_s } }
+      good.map {|x| Log.debug { "Records within bailiwick: " + x.to_s } }
+      bad.map {|x| Log.debug { "Records outside bailiwick: " + x.to_s } }
       return good if type == :good
       return bad if type == :bad
       return good, bad
@@ -330,7 +335,8 @@ module DNSCheck
       Log.debug { "find_roots entry #{root}" }
       # use our initial root to find all the roots
       r = Referral.new(:refid => '0', :server => nil,
-      :qname => 'www.goolge.com', :qtype => 'A', :nsatype => aaaa ? 'AAAA' : 'A',
+      #      :qname => 'www.goolge.com', :qtype => 'A', :nsatype => aaaa ? 'AAAA' : 'A',
+      :qname => 'www.squish.net', :qtype => 'A', :nsatype => aaaa ? 'AAAA' : 'A',
       :roots => [ { :name => root, :ips => [rootip] } ],
       :resolver => @resolver)
       run(r)
@@ -348,7 +354,7 @@ module DNSCheck
       ips = ""
       ips+= @serverips.join(',') if @serverips
       return "#{@refid} [#{@qname}/#{@qclass}/#{@qtype}] server=#{@server} " +
-      "server_ips=#{ips}"
+      "server_ips=#{ips} bailiwick=#{@bailiwick}"
     end
     
     def initialize(args)
@@ -366,6 +372,7 @@ module DNSCheck
       @serverips = args[:serverips] || nil
       @responses = Hash.new # responses/exception for each IP in @serverips
       @responses_infocache = Hash.new # end cache for each IP
+      @responses_bad = Hash.new # out of bailiwick records for each IP
       @children = Hash.new # Array of child Referrer objects keyed by IP
       @bailiwick = args[:bailiwick] || nil
       @secure = args[:secure] || true # ensure bailiwick checks
@@ -379,14 +386,13 @@ module DNSCheck
       starters = @roots
       newbailiwick = nil
       # search for best NS records in authority cache based on this domain name
-      if ns = ourinfocache.get_ns?(:domain => domain, :store => :authority) then
+      if ns = ourinfocache.get_ns?(domain) then
         starters = Array.new
         # look up in additional cache corresponding IP addresses if we know them
         for rr in ns do
-          iprrs = ourinfocache.get?(:qname => rr.domainname, :qtype => @nsatype,
-                                    :store => :additional)
+          iprrs = ourinfocache.get?(:qname => rr.domainname, :qtype => @nsatype)
           ips = iprrs ? iprrs.map {|iprr| iprr.address.to_s } : nil
-          starters.push({ :name => rr.name, :ips => ips })
+          starters.push({ :name => rr.domainname, :ips => ips })
         end
         newbailiwick = ns[0].name
       end
@@ -401,9 +407,8 @@ module DNSCheck
       refid = "#{@refid}.0"
       child_refid = 1
       starters, newbailiwick = get_startservers(:domain => @server)
-      puts "THIS IS A RESOLVE: #{@server} type #{@nsatype}"
+      Log.debug { "Resolving #{@server} type #{@nsatype} " }
       for starter in starters do
-        pp starter
         r = make_referral(:server => starter[:name], :serverips => starter[:ips],
                           :qname => @server, :qclass => 'IN', :qtype => @nsatype,
         :bailiwick => newbailiwick,
@@ -412,7 +417,6 @@ module DNSCheck
         @resolves.push r
         child_refid+= 1
       end
-      raise "check resolve referrals"
       # return a set of Referral objects that need to be processed
       return @resolves
     end
@@ -510,22 +514,19 @@ module DNSCheck
         @responses[ip] = m = process_normal_makequery(ip)
         next if m.is_a? Exception
         next if m.header.rcode != NOERROR
-        add = msg_bailiwick_additional(m, @bailiwick, @secure ? :good : :all)
         @responses_infocache[ip] = newinfocache = InfoCache.new(@infocache)
-        newinfocache.add(add, :store => :additional)
+        good, bad = msg_cacheable(m, @bailiwick, :both)
+        @responses_bad[ip] = bad
+        newinfocache.add(@secure ? good : good + bad)
         done = done?(m)
         Log.debug { "Done due to: " + done.to_s } if done
         next if done
         name = msg_follow_cnames(m, :qname => @qname, :qtype => @qtype)
-        refs = msg_referrals(m, :bailiwick => @secure ? @bailiwick : nil)
-        if refs.size == 0 then
-          Log.debug { "No valid referrals accepted for #{@server} " + 
-          " -- finding our own start point" }
-          starters, newbailiwick = get_startservers(domain => @server,
-                                                    infocache => newinfocache)
-                                                    pp starters
-        end
-        raise "Assertion failed for non zero referrals" if refs.size < 1
+        # refs = msg_referrals(m, :bailiwick => @secure ? @bailiwick : nil)
+        # XXX issue warning if refs are not the same as what we're doing!
+        starters, newbailiwick = get_startservers(:domain => name,
+                                                  :infocache => newinfocache)
+        #raise "Assertion failed for non zero referrals" if refs.size < 1
         @children[ip] = make_referrals(:starters => starters, :qname => name,
                                        :bailiwick => newbailiwick,
                                        :infocache => newinfocache)
@@ -537,7 +538,6 @@ module DNSCheck
       children = Array.new
       child_refid = 1
       for starter in starters do
-        pp starter
         refargs = { :server => starter[:name], :serverips => starter[:ips],
           :refid => "#{refid}.#{child_refid}"
         }.merge(args)
@@ -563,27 +563,10 @@ module DNSCheck
     
     def make_referral(args)
       raise "Must pass new refid" unless args[:refid]
-      pp @qname
       refargs = { :qname => @qname, :qclass => @qclass,
         :qtype => @qtype, :nsatype => @nsatype, :infocache => @infocache,
         :resolver => @resolver, :roots => @roots }.merge(args)
-      pp refargs[:qname]
       return Referral.new(refargs)
-    end
-    
-    def process_referrals(msg, infocache, qname)
-      children = Array.new
-      child_refid = 1
-      for ref in refs do
-        ips = nil # use infocache additional information for IP addresses
-        pp qname
-        children.push make_referral(:server => rname, :serverips => ips,
-                                    :qname => qname, :bailiwick => zonename,
-                                    :infocache => infocache,
-                                    :refid => "#{refid}.#{child_refid}")
-        child_refid+= 1
-      end
-      return children
     end
     
   end
