@@ -1,0 +1,67 @@
+# Additional section contains the answer
+# We should use additional to process authority, but not for the answer
+dig @ns2.google.com c.l.google.com
+
+; <<>> DiG 9.3.4 <<>> @ns2.google.com c.l.google.com
+; (1 server found)
+;; global options:  printcmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 30110
+;; flags: qr rd; QUERY: 1, ANSWER: 0, AUTHORITY: 7, ADDITIONAL: 7
+
+;; QUESTION SECTION:
+;c.l.google.com.                        IN      A
+
+;; AUTHORITY SECTION:
+l.google.com.           86400   IN      NS      a.l.google.com.
+l.google.com.           86400   IN      NS      b.l.google.com.
+l.google.com.           86400   IN      NS      c.l.google.com.
+l.google.com.           86400   IN      NS      d.l.google.com.
+l.google.com.           86400   IN      NS      e.l.google.com.
+l.google.com.           86400   IN      NS      f.l.google.com.
+l.google.com.           86400   IN      NS      g.l.google.com.
+
+;; ADDITIONAL SECTION:
+a.l.google.com.         86400   IN      A       209.85.139.9
+b.l.google.com.         86400   IN      A       64.233.179.9
+c.l.google.com.         86400   IN      A       64.233.161.9
+d.l.google.com.         86400   IN      A       66.249.93.9
+e.l.google.com.         86400   IN      A       209.85.137.9
+f.l.google.com.         86400   IN      A       72.14.235.9
+g.l.google.com.         86400   IN      A       64.233.167.9
+
+;; Query time: 22 msec
+;; SERVER: 216.239.34.10#53(216.239.34.10)
+;; WHEN: Tue Jun 17 23:27:30 2008
+;; MSG SIZE  rcvd: 254
+
+# Additional section contains out of bailiwick information
+# None of the blubb stuff can be trusted
+dig -t srv _http._tcp.butter.eu
+
+; <<>> DiG 9.3.4 <<>> -t srv _http._tcp.butter.eu
+;; global options:  printcmd
+;; Got answer:
+;; ->>HEADER<<- opcode: QUERY, status: NOERROR, id: 35758
+;; flags: qr rd ra; QUERY: 1, ANSWER: 1, AUTHORITY: 2, ADDITIONAL: 4
+
+;; QUESTION SECTION:
+;_http._tcp.butter.eu.          IN      SRV
+
+;; ANSWER SECTION:
+_http._tcp.butter.eu.   5556    IN      SRV     0 0 80 www.butter.eu.
+
+;; AUTHORITY SECTION:
+butter.eu.              5556    IN      NS      ns2.blubb.com.
+butter.eu.              5556    IN      NS      ns1.blubb.com.
+
+;; ADDITIONAL SECTION:
+www.butter.eu.          5556    IN      A       85.10.198.136
+ns2.blubb.com.          172336  IN      A       85.10.198.136
+ns2.blubb.com.          42780   IN      AAAA    2001:6f8:1076::1
+ns1.blubb.com.          172340  IN      A       213.133.109.140
+
+;; Query time: 3 msec
+;; SERVER: 62.197.34.33#53(62.197.34.33)
+;; WHEN: Wed Jun 18 00:46:07 2008
+;; MSG SIZE  rcvd: 196

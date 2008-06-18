@@ -1,7 +1,12 @@
 require 'Dnsruby'
 require 'Dnsruby/TheLog'
 
+require 'info_cache'
 require 'log'
+
+# TODO proper additional cache
+# TODO calculations
+# TODO negative stuff
 
 module DNSCheck
   class ResolveError < RuntimeError
@@ -59,7 +64,8 @@ module DNSCheck
           "question size #{msg.question.size}"
         end
         for c in [:qname, :qclass, :qtype] do
-          if a[c] and a[c].to_s != msg.question[0].send(c).to_s then
+          if a[c] and
+            a[c].to_s.downcase != msg.question[0].send(c).to_s.downcase then
             raise ResolveError, "#{msg.answerfrom} returned mismatched #{c} " +
           "#{msg.question[0].send(c)} instead of expected #{a[c]}"
           end
@@ -71,40 +77,123 @@ module DNSCheck
     end
     
     def msg_answers?(msg, args)
-      a = args.dup
-      a[:qclass]||= 'IN'
-      ans = msg.answer.select { |x| x.name.to_s == a[:qname] && 
-        x.klass == a[:qclass] && x.type == a[:qtype]
+      qclass = args[:qclass] || 'IN'
+      ans = msg.answer.select { |x|
+        x.name.to_s.casecmp(args[:qname].to_s) == 0 && 
+        x.klass.to_s.casecmp(qclass.to_s) == 0 &&
+        x.type.to_s.casecmp(args[:qtype].to_s) == 0
       }
+      Log.debug { "Answers:" + ans.size.to_s}
       return ans.size > 0 ? ans : nil
     end
     
     def msg_additional?(msg, args)
       qclass = args[:qclass] || 'IN'
-      #      puts msg.additional.map { |x|
-      #        Log.debug { "Additional: #{x.name.to_s} vs #{args[:qname].inspect}" }
-      #        Log.debug { "  Additional: #{x.klass.inspect} vs #{qclass.inspect}" }
-      #        Log.debug { "  Additional: #{x.type.inspect} vs #{args[:qtype].inspect}" }
-      #         (x.name.to_s == args[:qname] && x.klass == qclass && x.type == args[:qtype]) ? "true" : "false"
-      #      }.join("xxx")
-      ans = msg.additional.select { |x|
-        x.name.to_s == args[:qname] && x.klass == qclass && x.type == args[:qtype]
+      Log.debug { "Looking for #{args[:qname]}/#{args[:qtype]} in additional" }
+      add = msg.additional.select { |x|
+        x.name.to_s.casecmp(args[:qname].to_s) == 0 && 
+        x.klass.to_s.casecmp(qclass.to_s) == 0 &&
+        x.type.to_s.casecmp(args[:qtype].to_s) == 0
       }
-      return ans.size > 0 ? ans : nil
+      Log.debug { add.size > 0 ? "Found #{add.size} additional records" \
+        : "No additional records for #{args[:qname]}/#{args[:qtype]}"}
+      return add.size > 0 ? ans : nil
     end
     
-    def msg_referrals(msg)
-      return msg.authority.select { |x| x.type == 'NS' && x.klass == 'IN' }
+    def msg_additional_ips?(msg, args)
+      qclass = args[:qclass] || 'IN'
+      Log.debug { "Looking for #{args[:qname]}/#{args[:qtype]} in additional" }
+      if add = msg.additional.select { |x|
+          x.name.to_s.casecmp(args[:qname].to_s) == 0 && 
+          x.klass.to_s.casecmp(qclass.to_s) == 0 &&
+          x.type.to_s.casecmp(args[:qtype].to_s) == 0
+        } then
+        ips = add.map {|x| x.address.to_s }
+        Log.debug { "Found in additional #{args[:qname]} = " + ips.join(", ") }
+        return ips
+      end
+      Log.debug { "No additional records for #{args[:qname]}/#{args[:qtype]}" }
+      return nil
     end
     
-    def msg_follow_cnames(msg)
-      name = msg.question[0].qname.to_s
-      while ans = msg_answers?(msg, :qname => name, :qtype => 'CNAME') do
+    def msg_referrals(msg, args)
+      r = msg.authority.select { |x|
+        x.type.to_s.casecmp('NS') == 0 && x.klass.to_s.casecmp('IN') == 0
+      }
+      if args[:bailiwick] then
+        b = args[:bailiwick]
+        r = r.select { |x|
+          zonename = x.name.to_s
+          if cond = zonename !~ /#{@b}$/i then
+            Log.debug { "Excluding lame referral #{b} to #{zonename}" }
+            raise "lame"
+          end
+          cond
+        }
+      end
+      Log.debug { "Referrals: " + r.map {|x| x.domainname.to_s }.join(", ") }
+      return r
+    end
+    
+    def msg_authority(msg)
+      ns = []
+      soa = []
+      other = []
+      for rr in msg.authority do
+        type = rr.type.to_s
+        klass = rr.klass.to_s
+        if type.casecmp('NS') == 0 && klass.casecmp('IN') == 0
+          ns.push rr
+        elsif type.casecmp('SOA') == 0 && klass.casecmp('IN') == 0
+          soa.push rr
+        else
+          other.push rr
+        end
+      end
+      return ns, soa, other      
+    end
+    
+    def msg_follow_cnames(msg, args)
+      name = args[:qname]
+      type = args[:qtype]
+      while true do
+        return name if msg_answers?(msg, :qname => name, :qtype => type)
+        if not ans = msg_answers?(msg, :qname => name, :qtype => 'CNAME') then
+          return name
+        end
         Log.debug { "CNAME encountered from #{name} to #{ans[0].domainname}"}
         name = ans[0].domainname.to_s
       end
-      return name
     end
+    
+    def msg_nodata?(msg)
+      ns, soa, other = msg_authority(msg)
+      if soa.size > 0 or ns.size == 0 then
+        Log.debug { "NODATA: soa=#{soa.size} ns=#{ns.size}" }
+        pp msg
+        raise "no"
+        return true
+      end
+      return false
+    end
+    
+    def msg_bailiwick_additional(msg, bailiwick, type = :both)
+      good, bad = Array.new, Array.new
+      ending = bailiwick ? '.' + bailiwick : ''
+      for rr in msg.additional do
+        if rr.name.to_s =~ /#{ending}$/i then # no ends_with? in 1.8
+          good.push rr
+        else
+          bad.push rr
+        end
+      end
+      good.map {|rr| Log.debug { "Additional within bailiwick: " + rr.to_s } }
+      bad.map {|rr| Log.debug { "Additional outside bailiwick: " + rr.to_s } }
+      return good if type == :good
+      return bad if type == :bad
+      return good, bad
+    end
+    
   end
   
   class Resolver
@@ -157,10 +246,8 @@ module DNSCheck
       for root in roots do
         # lets check additional section first
         for type in types do
-          Log.debug { "Looking for root #{root} type #{type}" }
           if (add = msg_additional?(msg, :qname => root, :qtype => type)) then
             rootip = add[0].rdata.to_s
-            Log.debug { "Using additional section found #{rootip}"}
             return root, rootip
           end
         end
@@ -186,7 +273,7 @@ module DNSCheck
     end
     
     def run(r)
-      Log.debug { "run entry " + r.to_s }
+      Log.debug { "run entry, initialising stack to: " + r.to_s }
       stack = Array.new
       stack << r
       while stack.size > 0 do
@@ -200,6 +287,7 @@ module DNSCheck
           end
           output
         }
+        raise "bad stack" if stack.size > 100
         r = stack.pop
         Log.debug { "running on stack entry #{r}" }
         case r
@@ -231,7 +319,7 @@ module DNSCheck
         if stack.size == 0 then
           puts "All done!!!"
         end
-        Log.debug { "Unexpectedly nothing to do for #{r}"}
+        raise "Fatal stack error at #{r} - size still #{stack.size}"
       end
     end
     
@@ -242,7 +330,7 @@ module DNSCheck
       Log.debug { "find_roots entry #{root}" }
       # use our initial root to find all the roots
       r = Referral.new(:refid => '0', :server => nil,
-      :qname => 'www.google.com', :qtype => 'A', :nsatype => aaaa ? 'AAAA' : 'A',
+      :qname => 'www.goolge.com', :qtype => 'A', :nsatype => aaaa ? 'AAAA' : 'A',
       :roots => [ { :name => root, :ips => [rootip] } ],
       :resolver => @resolver)
       run(r)
@@ -253,14 +341,14 @@ module DNSCheck
   class Referral
     include MessageUtility
     
-    attr_reader :server, :serverips, :qname, :qclass, :qtype, :nsatype, :msg
-    attr_reader :roots, :refid
+    attr_reader :server, :serverips, :qname, :qclass, :qtype, :nsatype
+    attr_reader :roots, :refid, :message, :infocache
     
     def to_s
       ips = ""
       ips+= @serverips.join(',') if @serverips
-      return "#{@refid} [#{@qname}/#{@qclass}/#{@qtype}] #{@server} " +
-      "ips=#{ips}"
+      return "#{@refid} [#{@qname}/#{@qclass}/#{@qtype}] server=#{@server} " +
+      "server_ips=#{ips}"
     end
     
     def initialize(args)
@@ -269,18 +357,42 @@ module DNSCheck
       @qclass = args[:qclass] || :IN
       @qtype = args[:qtype] || :A
       @nsatype = args[:nsatype] || :A
-      # XXX this cache should be for additional records and be duplicated
-      # as it goes down the tree
-      @cache = args[:cache] || Array.new # XXX not used - need to do properly
+      @infocache = args[:infocache] || DNSCheck::InfoCache.new
       @roots = args[:roots]
       @resolves = nil
-      @msg = nil
+      @message = nil
       @refid = args[:refid] || ''
       @server = args[:server] || nil # nil for the root-root server
       @serverips = args[:serverips] || nil
       @responses = Hash.new # responses/exception for each IP in @serverips
+      @responses_infocache = Hash.new # end cache for each IP
       @children = Hash.new # Array of child Referrer objects keyed by IP
+      @bailiwick = args[:bailiwick] || nil
+      @secure = args[:secure] || true # ensure bailiwick checks
       raise "Must pass Resolver" unless @resolver
+      Log.debug { "New resolver object created: " + self.to_s }
+    end
+    
+    def get_startservers(args)
+      domain = args[:domain]
+      ourinfocache = args[:infocache] || @infocache
+      starters = @roots
+      newbailiwick = nil
+      # search for best NS records in authority cache based on this domain name
+      if ns = ourinfocache.get_ns?(:domain => domain, :store => :authority) then
+        starters = Array.new
+        # look up in additional cache corresponding IP addresses if we know them
+        for rr in ns do
+          iprrs = ourinfocache.get?(:qname => rr.domainname, :qtype => @nsatype,
+                                    :store => :additional)
+          ips = iprrs ? iprrs.map {|iprr| iprr.address.to_s } : nil
+          starters.push({ :name => rr.name, :ips => ips })
+        end
+        newbailiwick = ns[0].name
+      end
+      Log.debug { "For domain #{domain} using start servers: " +
+        starters.map { |x| x[:name] }.join(', ') }
+      return starters, newbailiwick
     end
     
     # resolve server to serverips, return list of Referral objects to process
@@ -288,18 +400,19 @@ module DNSCheck
       raise "This Referral object has already been resolved" if resolved?
       refid = "#{@refid}.0"
       child_refid = 1
-      # TODO start lookup at better known point using cache
-      for root in @roots do
-        puts "THIS IS A RESOLVE: #{@server} type #{@nsatype}"
-        r = Referral.new(:server => root[:name], :serverips => root[:ips],
-                         :qname => @server, :qclass => 'IN', :qtype => @nsatype,
-        :nsatype => @nsatype, :cache => @cache,
-        :refid => "#{refid}.#{child_refid}", :resolver => @resolver,
-        :roots => @roots)
+      starters, newbailiwick = get_startservers(:domain => @server)
+      puts "THIS IS A RESOLVE: #{@server} type #{@nsatype}"
+      for starter in starters do
+        pp starter
+        r = make_referral(:server => starter[:name], :serverips => starter[:ips],
+                          :qname => @server, :qclass => 'IN', :qtype => @nsatype,
+        :bailiwick => newbailiwick,
+        :refid => "#{refid}.#{child_refid}")
         @resolves||= Array.new
         @resolves.push r
         child_refid+= 1
       end
+      raise "check resolve referrals"
       # return a set of Referral objects that need to be processed
       return @resolves
     end
@@ -319,7 +432,10 @@ module DNSCheck
       # root-root is always resolved, otherwise check we have IP addresses
       return true if isrootroot?
       return false if @serverips.nil?
+      
+      # XXX
       return true
+      
       # get all the Referral objects for the resolving process and check them
       Log.debug { "checking resolved?"}
       for r in @resolves do
@@ -340,7 +456,7 @@ module DNSCheck
       raise "This Referral object has already been processed" if processed?
       raise "You need to resolve this Referral object" unless resolved?
       if (server) then
-        process_referral(args)
+        process_normal(args)
       else
         # special case - no server means start from the top with the roots
         process_add_roots(args)
@@ -350,14 +466,13 @@ module DNSCheck
     end
     
     def process_add_roots(args)
+      Log.debug { "Special case processing, addding roots as referrals" }
       refid_prefix = @refid == '' ? '' : "#{@refid}."
       refid = 1
       @children[:rootroot] = Array.new
       for root in @roots do
-        r = Referral.new(:refid => "#{refid_prefix}#{refid}",
-        :server => root[:name], :serverips => root[:ips],
-        :qname => @qname, :qclass => @qclass, :qtype => @qtype,
-        :nsatype => @nsatype, :resolver => @resolver, :roots => @roots)
+        r = make_referral(:server => root[:name], :serverips => root[:ips],
+                          :refid => "#{refid_prefix}#{refid}")
         @children[:rootroot].push r
         refid+= 1
       end
@@ -366,57 +481,106 @@ module DNSCheck
     NOERROR = Dnsruby::RCode.NOERROR
     NXDOMAIN = Dnsruby::RCode.NXDOMAIN
     
-    def process_referral(args)
-      Log.debug { "process_referral " + self.to_s }
+    # Are we done?  If so, what was the reason?
+    # :exception - there was an exception (timeout)
+    # :error - there was a DNS error (see rcode)
+    # :answered - there was a direct answer
+    # :nodata - there was NODATA (referring to after cname processing)
+    # :additional - answer was gleened from additional processing cache
+    # false - we didn't find the answer with this message, referrals present
+    def done?(msg)
+      qtype = msg.question[0].qtype
+      qname = msg_follow_cnames(msg, :qname => msg.question[0].qname,
+                                :qtype => qtype)
+      return :exception if msg.is_a? Exception
+      return :error if msg.header.rcode != NOERROR
+      return :answered if msg_answers?(msg, :qname => qname, :qtype => qtype)
+      return :nodata if msg_nodata?(msg)
+      return false
+    end
+    
+    # TODO: create response object encapsulating message, infocache and children?
+    def process_normal(args)
+      Log.debug { "process " + self.to_s }
+      # XXX should we check these IPs to see if we've queried them before for
+      # this query?  lame server detection is currently done on the bailiwick
+      # check only during referral.  Adding this check would fast-track
+      # failures
       for ip in @serverips do
-        @responses[ip] = m = process_referral_makequery(ip)
+        @responses[ip] = m = process_normal_makequery(ip)
         next if m.is_a? Exception
-        next unless m.header.rcode == NOERROR
-        name = msg_follow_cnames(msg)
-        next if msg_answers?(msg, :qname => name, :qtype => @qtype)
-        if (refs = msg_referrals(msg)).size > 0 then
-          @children[ip] = process_referral_continued(msg)
+        next if m.header.rcode != NOERROR
+        add = msg_bailiwick_additional(m, @bailiwick, @secure ? :good : :all)
+        @responses_infocache[ip] = newinfocache = InfoCache.new(@infocache)
+        newinfocache.add(add, :store => :additional)
+        done = done?(m)
+        Log.debug { "Done due to: " + done.to_s } if done
+        next if done
+        name = msg_follow_cnames(m, :qname => @qname, :qtype => @qtype)
+        refs = msg_referrals(m, :bailiwick => @secure ? @bailiwick : nil)
+        if refs.size == 0 then
+          Log.debug { "No valid referrals accepted for #{@server} " + 
+          " -- finding our own start point" }
+          starters, newbailiwick = get_startservers(domain => @server,
+                                                    infocache => newinfocache)
+                                                    pp starters
         end
+        raise "Assertion failed for non zero referrals" if refs.size < 1
+        @children[ip] = make_referrals(:starters => starters, :qname => name,
+                                       :bailiwick => newbailiwick,
+                                       :infocache => newinfocache)
       end
     end
     
-    def process_referral_makequery(ip)  
+    def make_referrals(args) # :starters can be @root or our own list
+      starters = args[:starters]
+      children = Array.new
+      child_refid = 1
+      for starter in starters do
+        pp starter
+        refargs = { :server => starter[:name], :serverips => starter[:ips],
+          :refid => "#{refid}.#{child_refid}"
+        }.merge(args)
+        children.push make_referral(refargs)
+        child_refid+= 1
+      end
+      return children
+    end
+    
+    def process_normal_makequery(ip)  
       Log.debug { "Querying #{ip} for #{@qname}/#{@qtype}" }
       @resolver.nameserver = ip
       @resolver.udp_size = Dnsruby::Resolver::DefaultUDPSize # bug in Dnsruby
       begin
-        @msg = @resolver.query(@qname, @qtype)
+        @message = @resolver.query(@qname, @qtype)
       rescue Dnsruby::ResolvTimeout => e
         return e
       end
-      msg_validate(msg, :qname => @qname, :qtype => @qtype)
-      msg_comment(msg, :want_recursion => false)
-      return msg
+      msg_validate(@message, :qname => @qname, :qtype => @qtype)
+      msg_comment(@message, :want_recursion => false)
+      return @message
     end
     
-    def process_referral_continued(msg)
-      # No answers, so hopefully we have some referrals
-      refs = msg_referrals(msg)
-      Log.debug { "Referrals: " + refs.map {|x| x.domainname.to_s }.join(", ") }
+    def make_referral(args)
+      raise "Must pass new refid" unless args[:refid]
+      pp @qname
+      refargs = { :qname => @qname, :qclass => @qclass,
+        :qtype => @qtype, :nsatype => @nsatype, :infocache => @infocache,
+        :resolver => @resolver, :roots => @roots }.merge(args)
+      pp refargs[:qname]
+      return Referral.new(refargs)
+    end
+    
+    def process_referrals(msg, infocache, qname)
       children = Array.new
       child_refid = 1
       for ref in refs do
-        name = ref.domainname.to_s
-        Log.debug { "Looking for #{name} in additional data" }
-        if (add = msg_additional?(msg, :qname => name,
-                                  :qtype => @nsatype)) then
-          referral_ips = add.map {|x| x.address.to_s }
-          Log.debug { "#{name} = " + referral_ips.join(", ") }
-        else
-          Log.debug { "#{name} not present in additional section" }
-          serverips = nil
-        end
-        r = Referral.new(:server => name, :serverips => referral_ips,
-                         :qname => @qname, :qclass => @qclass, :qtype => @qtype,
-                         :nsatype => @nsatype, :cache => @cache,
-                         :refid => "#{refid}.#{child_refid}",
-        :resolver => @resolver, :roots => @roots)
-        children.push r
+        ips = nil # use infocache additional information for IP addresses
+        pp qname
+        children.push make_referral(:server => rname, :serverips => ips,
+                                    :qname => qname, :bailiwick => zonename,
+                                    :infocache => infocache,
+                                    :refid => "#{refid}.#{child_refid}")
         child_refid+= 1
       end
       return children
