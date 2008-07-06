@@ -6,18 +6,22 @@ module DNSCheck
     module_function
     
     def msg_comment(msg, args)
+      warnings = Array.new
       if args[:want_recursion] then
         if not msg.header.ra then
-          Log.warn { "#{msg.answerfrom} doesn't allow recursion" }
+          warnings.push "#{msg.answerfrom} doesn't allow recursion"
         end
       else
         if msg.header.ra then
-          Log.warn { "#{msg.answerfrom} allows recursion" }
+          warnings.push "#{msg.answerfrom} allows recursion"
         end
       end
+      for warn in warnings do
+        Log.warn { warn }
+      end
       Log.debug { "#{msg.answerfrom} code #{msg.header.rcode}" }
+      return warnings
     end
-    
     
     def msg_validate(msg, args)
       a = args.dup

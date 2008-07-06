@@ -50,7 +50,12 @@ def progress_main(args)
   mystate = args[:state]
   referral = args[:referral]
   answer = args[:answer]
-  unless answer or referral.refid.empty? then
+  return if referral.refid.empty?
+  if answer then
+    for warning in referral.warnings do
+      puts "#{referral.refid} WARNING: #{warning}"
+    end
+  else
     print referral_txt(referral)
     print "\n"
   end
@@ -77,8 +82,6 @@ require 'pp'
 require 'dns_check'
 require 'log'
 
-types = [ 'ns', :A, :AAAA, :SRV, :WKS, :NS, :CNAME, :SOA, :PTR, :HINFO, :MINFO,
-:MX, :TXT, :ANY ]
 Version = [ 0, 0, 1].freeze
 
 options = Hash.new
@@ -106,7 +109,7 @@ opts.on("-v", "--[no-]verbose") { |o| options[:verbose] = o }
 opts.on("-d", "--[no-]debug") { |o| options[:debug]+= 1 }
 opts.on("-r", "--root-server HOST") { |o| options[:root] = o }
 opts.on("-a", "--all-root-servers") { |o| options[:allroots] = o }
-opts.on("-t", "--type TYPE", types) { |o| options[:type] = o }
+opts.on("-t", "--type TYPE", Dnsruby::Types.constants) { |o| options[:type] = o }
 opts.on("--allow-tcp") { |o| options[:allow_tcp] = o }
 opts.on("--always-tcp") { |o| options[:always_tcp] = o }
 opts.on("--[no-]broken-roots") { |o| options[:broken] = o }
@@ -173,31 +176,4 @@ result = dnscheck.run_query(:qname => options[:domainname],
                             :qtype => options[:type].to_s, :roots => roots)
 puts if options[:progress]
 puts "Results:"
-s = " " * 12
-result.stats.each_pair do |key, data|
-  puts
-  printf "%5.1f%%: ", data[:prob] * 100
-  if key =~ /^key:exception:/ then
-    puts "caused exception #{data[:msg]} at #{data[:server]} (#{data[:ip]})"
-  elsif key =~ /^key:error:/ then
-    if data[:msg].header.rcode == Dnsruby::RCode::NXDOMAIN then
-      puts "NXDOMAIN (no such domain) at #{data[:server]} (#{data[:ip]})"
-    else
-      puts "#{data[:msg].header.rcode} at #{data[:server]} (#{data[:ip]})"
-    end
-  elsif key =~ /^key:nodata:/ then
-    puts "NODATA (for this type) at #{data[:server]} (#{data[:ip]})"
-  elsif key =~ /^key:noglue:/ then
-    parent = data[:referral].parent
-    puts "No glue for #{data[:server]}"
-    puts "#{s}Question: #{data[:qname]}/#{data[:qclass]}/#{data[:qtype]}"
-    puts "#{s}Referral: #{parent.server} to #{data[:server]} for #{data[:referral].bailiwick}"
-  elsif key =~ /^key:answer:/ then
-    puts "Answers from #{data[:server]} (#{data[:ip]})"
-    for rr in data[:answers] do
-      puts "#{s}#{rr}"
-    end
-  else
-    puts "#{key}"
-  end
-end
+result.stats_display

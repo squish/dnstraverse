@@ -5,6 +5,7 @@ module DNSCheck
     
     attr_reader :server, :serverips, :qname, :qclass, :qtype, :nsatype
     attr_reader :refid, :message, :infocache, :parent, :bailiwick, :stats
+    attr_reader :warnings
     
     def to_s
       ips = ""
@@ -57,6 +58,7 @@ module DNSCheck
       @stats = nil # will contain statistics for answers
       @stats_resolve = nil # will contain statistics for our resolve (if applic)
       @serverweights = nil # will be set if we resolve (Hash, key is IP)
+      @warnings = Array.new # warnings will be placed here
       raise "Must pass Resolver" unless @resolver
       @infocache.add_hints('', args[:roots]) if args[:roots] # add root hints
       Log.debug { "New resolver object created: " + self.to_s }
@@ -335,10 +337,20 @@ module DNSCheck
         Log.debug { "Done due to: " + done.to_s } if done
         next if done
         name = msg_follow_cnames(m, :qname => @qname, :qtype => @qtype)
-        # refs = msg_referrals(m, :bailiwick => @secure ? @bailiwick : nil)
-        # XXX issue warning if refs are not the same as what we're doing!
         starters, newbailiwick = get_startservers(:domain => name,
                                                   :infocache => newinfocache)
+        starternames = starters.map { |x| x[:name].to_s.downcase }
+        unknown_starternames = starternames
+        for nsrr in (msg_authority(m))[0] do
+          if nsrr.name.to_s != newbailiwick.to_s or
+            not starternames.include?(nsrr.domainname.to_s.downcase) then
+            @warnings.push "Authority '#{nsrr}' not used"
+          end
+          unknown_starternames.delete(nsrr.domainname.to_s.downcase)
+        end
+        for startername in unknown_starternames do
+          @warnings.push "Using '#{startername}' which wasn't in authority"
+        end
         #raise "Assertion failed for non zero referrals" if refs.size < 1
         @children[ip] = make_referrals(:starters => starters, :qname => name,
                                        :bailiwick => newbailiwick,
@@ -374,7 +386,7 @@ module DNSCheck
         return Dnsruby::ResolvTimeout.new
       end
       msg_validate(@message, :qname => @qname, :qtype => @qtype)
-      msg_comment(@message, :want_recursion => false)
+      @warnings.concat msg_comment(@message, :want_recursion => false)
       return @message
     end
     
@@ -387,6 +399,36 @@ module DNSCheck
       return Referral.new(refargs)
     end
     
+    def stats_display
+      s = " " * 12
+      @stats.each_pair do |key, data|
+        puts
+        printf "%5.1f%%: ", data[:prob] * 100
+        if key =~ /^key:exception:/ then
+          puts "caused exception #{data[:msg]} at #{data[:server]} (#{data[:ip]})"
+        elsif key =~ /^key:error:/ then
+          if data[:msg].header.rcode == Dnsruby::RCode::NXDOMAIN then
+            puts "NXDOMAIN (no such domain) at #{data[:server]} (#{data[:ip]})"
+          else
+            puts "#{data[:msg].header.rcode} at #{data[:server]} (#{data[:ip]})"
+          end
+        elsif key =~ /^key:nodata:/ then
+          puts "NODATA (for this type) at #{data[:server]} (#{data[:ip]})"
+        elsif key =~ /^key:noglue:/ then
+          parent = data[:referral].parent
+          puts "No glue for #{data[:server]}"
+          puts "#{s}Question: #{data[:qname]}/#{data[:qclass]}/#{data[:qtype]}"
+          puts "#{s}Referral: #{parent.server} to #{data[:server]} for #{data[:referral].bailiwick}"
+        elsif key =~ /^key:answer:/ then
+          puts "Answers from #{data[:server]} (#{data[:ip]})"
+          for rr in data[:answers] do
+            puts "#{s}#{rr}"
+          end
+        else
+          puts "#{key}"
+        end
+      end
+    end
     
   end
   

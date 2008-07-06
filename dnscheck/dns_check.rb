@@ -7,8 +7,6 @@ require 'message_utility'
 require 'caching_resolver'
 require 'referral'
 
-# TODO calculations
-
 module DNSCheck
   
   class Resolver
@@ -26,8 +24,6 @@ module DNSCheck
       @progress_resolve = args[:progress_resolve] || method(:progress_null)
       retries = args[:retries] || 2
       retry_delay = args[:retry_delay] || 2
-      retries = 1
-      retry_delay = 1
       dnssec = args[:dnssec] || false
       srcaddr = args[:srcaddr] || :'0.0.0.0'
       use_tcp = args[:always_tcp] || false
@@ -119,18 +115,18 @@ module DNSCheck
         case r
           when :calc_resolve
           r = stack.pop
+          r.resolve_calculate
           refres = r.referral_resolution?
           p = (refres == true ? @progress_resolve : @progress_main)
           p.call(:state => @state, :referral => r, :answer => true)
-          r.resolve_calculate
           stack << r # now need to process
           next
           when :calc_answer
           r = stack.pop
+          r.answer_calculate
           refres = r.referral_resolution?
           p = (refres == true ? @progress_resolve : @progress_main)
           p.call(:state => @state, :referral => r, :answer => true)
-          r.answer_calculate
           next
         else
           refres = r.referral_resolution?
