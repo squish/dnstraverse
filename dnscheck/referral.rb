@@ -65,6 +65,7 @@ module DNSCheck
       @bailiwick = args[:bailiwick] || nil
       @secure = args[:secure] || true # ensure bailiwick checks
       @parent = args[:parent] || nil # Parent Referral
+      @maxdepth = args[:maxdepth] || 10 # maximum depth before error
       @noglue = false # flag to indicate failure due to referral without glue
       @referral_resolution = args[:referral_resolution] || false # flag
       @stats = nil # will contain statistics for answers
@@ -345,6 +346,10 @@ module DNSCheck
       #      end
       for ip in @serverips do
         next if ip =~ /^key:/ # resolve failed on something
+        if @refid.scan(/\./).length >= @maxdepth.to_i then
+          @responses[ip] = RuntimeError.new "Maxdepth #{@maxdepth} exceeded"
+          next
+        end
         @responses[ip] = m = process_normal_makequery(ip)
         next if m.is_a? Exception
         next if m.header.rcode != NOERROR
@@ -391,20 +396,44 @@ module DNSCheck
       return children
     end
     
-    def process_normal_makequery(ip)  
-      Log.debug { "Querying #{ip} for #{@qname}/#{@qtype}" }
-      @resolver.nameserver = ip
-      @resolver.udp_size = Dnsruby::Resolver::DefaultUDPSize # bug in Dnsruby
+    def process_normal_makequery_with_udpsize(udpsize)
+      @resolver.udp_size = udpsize
       begin
-        @message = @resolver.query(@qname, @qtype)
+        message = @resolver.query(@qname, @qtype)
       rescue Dnsruby::ResolvTimeout => e
         return e
       end
-      if @message.nil? then
+      if message.nil? then
         puts "ERROR: Querying #{ip} for #{@qname}/#{@qtype}"
-        e = Dnsruby::ResolvTimeout.new "fake timeout - dnsruby bug"
-        return e
+        message = Dnsruby::ResolvTimeout.new "fake timeout - dnsruby bug"
+        return message
       end
+      return message
+    end
+    
+    def process_normal_makequery_message
+      my_udp_size = @resolver.udp_size
+      message = process_normal_makequery_with_udpsize(my_udp_size)
+      return message if message.is_a? Exception
+      return message if my_udp_size == 512
+      return message if (message.header.rcode != Dnsruby::RCode.FORMERR and
+                         message.header.rcode != Dnsruby::RCode.NOTIMP and
+                         message.header.rcode != Dnsruby::RCode.SERVFAIL)
+      Log.debug { "Possible failure by nameserver to understand EDNS0 - retry" }
+      message_retry = process_normal_makequery_with_udpsize(512)
+      @resolver.udp_size = my_udp_size
+      return message if message_retry.is_a? Exception
+      return message if (message_retry.header.rcode == Dnsruby::RCode.FORMERR or
+                         message_retry.header.rcode == Dnsruby::RCode.NOTIMP or
+                         message_retry.header.rcode == Dnsruby::RCode.SERVFAIL)
+      @warnings.push "#{message.answerfrom} doesn't seem to support EDNS0"
+      return message_retry
+    end
+    
+    def process_normal_makequery(ip)  
+      Log.debug { "Querying #{ip} for #{@qname}/#{@qtype}" }
+      @resolver.nameserver = ip
+      @message = process_normal_makequery_message
       msg_validate(@message, :qname => @qname, :qtype => @qtype)
       @warnings.concat msg_comment(@message, :want_recursion => false)
       return @message
@@ -415,7 +444,8 @@ module DNSCheck
       refargs = { :qname => @qname, :qclass => @qclass,
         :qtype => @qtype, :nsatype => @nsatype, :infocache => @infocache,
         :referral_resolution => @referral_resolution,
-        :resolver => @resolver, :parent => self }.merge(args)
+        :resolver => @resolver, :maxdepth => @maxdepth,
+        :parent => self }.merge(args)
       return Referral.new(refargs)
     end
     

@@ -14,6 +14,8 @@
 #        --[no-]broken-roots      Use unresponsive root servers (default false)
 #        --root-aaaa              Look for IPv6 addresses for root servers
 #        --follow-aaaa            Only follow AAAA records for referrals
+#        --udp-size SIZE          Turn on EDNS0 with given UDP size
+#        --max-depth DEPTH        Maximum depth to traverse (default 10)
 #        --[no-]allow-tcp         Try using tcp if udp truncated (default true)
 #        --[no-]always-tcp        Always use tcp (default false)
 #
@@ -66,6 +68,9 @@ def progress_main(args)
     end
     when :start then
     print o[:verbose] ? referral_txt_verbose(r) : referral_txt_normal(r)
+    if r.serverips.nil? then
+      print " -- resolving"
+    end
     print "\n"
   end
 end
@@ -114,6 +119,8 @@ options[:root_aaaa] = false
 options[:always_tcp] = false
 options[:allow_tcp] = false
 options[:allstats] = false
+options[:udpsize] = 512
+options[:maxdepth] = 10
 
 opts = OptionParser.new
 opts.banner = "Usage: #{File.basename($0)} [options] DOMAIN"  
@@ -122,8 +129,10 @@ opts.on("-d", "--[no-]debug") { |o| options[:debug]+= 1 }
 opts.on("-r", "--root-server HOST") { |o| options[:root] = o }
 opts.on("-a", "--all-root-servers") { |o| options[:allroots] = o }
 opts.on("-t", "--type TYPE", Dnsruby::Types.constants) { |o| options[:type] = o }
+opts.on("--udp-size SIZE") { |o| options[:udpsize] = o }
 opts.on("--allow-tcp") { |o| options[:allow_tcp] = o }
 opts.on("--always-tcp") { |o| options[:always_tcp] = o }
+opts.on("--max-depth DEPTH") { |o| options[:maxdepth] = o }
 opts.on("--[no-]broken-roots") { |o| options[:broken] = o }
 opts.on("--[no-]follow-aaaa") { |o| options[:follow_aaaa] = o }
 opts.on("--[no-]root-aaaa") { |o| options[:root_aaaa] = o }
@@ -149,7 +158,8 @@ end
 Log.level = options[:debug] > 0 ? Logger::DEBUG : Logger::UNKNOWN
 Log.debug {"Options chosen:\n" }
 Log.debug { options.map {|x,y| "  #{x}: #{y}" }.join("\n") }
-args = { :state => options, :aaaa => options[:follow_aaaa] }
+args = { :state => options, :aaaa => options[:follow_aaaa],
+  :udpsize => options[:udpsize] }
 args[:progress_main] = method(:progress_main) if options[:progress]
 args[:progress_resolve] = method(:progress_resolves) if options[:progress] and options[:resolves]
 #args[:summary] = method(:summary) if options[:summary]
@@ -185,7 +195,8 @@ else
 end
 puts "Running query #{options[:domainname]} type #{options[:type]}"
 result = dnscheck.run_query(:qname => options[:domainname],
-                            :qtype => options[:type].to_s, :roots => roots)
+                            :qtype => options[:type].to_s, :roots => roots,
+                            :maxdepth => options[:maxdepth])
 puts if options[:progress]
 puts "Results:"
 result.stats_display(:results => true, :spacing => true)

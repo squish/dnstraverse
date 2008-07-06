@@ -20,6 +20,7 @@ module DNSCheck
       Log.debug { "Initialize with args: " + args.inspect }
       Dnsruby::TheLog.level = args[:libloglevel] if args[:libloglevel]
       @state = args[:state] || nil
+      @maxdepth = args[:maxdepth] || 10
       @progress_main = args[:progress_main] || method(:progress_null)
       @progress_resolve = args[:progress_resolve] || method(:progress_null)
       retries = args[:retries] || 2
@@ -28,18 +29,20 @@ module DNSCheck
       srcaddr = args[:srcaddr] || :'0.0.0.0'
       use_tcp = args[:always_tcp] || false
       ignore_truncation = args[:allow_tcp] ? false : true
+      udpsize = args[:udpsize] || 512
       cfg = Dnsruby::Config.new
       rescfg = { :nameserver => cfg.nameserver, :ndots => cfg.ndots,
         :apply_domain => false, :apply_search_list => false}
       resargs = { :config_info => rescfg, :use_tcp => use_tcp, :recurse => false,
         :retry_times => retries, :retry_delay => retry_delay, :dnssec => dnssec,
-        :ignore_truncation => ignore_truncation, :src_address => srcaddr }
+        :ignore_truncation => ignore_truncation, :src_address => srcaddr,
+        :udp_size => udpsize.to_i }
       Log.debug { "Creating remote resolver object"}
       @resolver = CachingResolver.new(resargs) # used for set nameservers
-      @resolver.udp_size = Dnsruby::Resolver::DefaultUDPSize # bug in Dnsruby
+      @resolver.udp_size = udpsize.to_i
       Log.debug { "Creating local resolver object"}
       @lresolver = Dnsruby::Resolver.new(resargs) # left on local default
-      @lresolver.udp_size = Dnsruby::Resolver::DefaultUDPSize # bug in Dnsruby
+      @lresolver.udp_size = udpsize.to_i
       self
     end
     
@@ -175,7 +178,6 @@ module DNSCheck
       qtype = aaaa ? 'AAAA' : 'A'
       Log.debug { "find_roots entry #{root}" }
       @resolver.nameserver = rootip
-      @resolver.udp_size = Dnsruby::Resolver::DefaultUDPSize # bug in Dnsruby
       msg = @resolver.query('', 'NS')
       msg_validate(msg, :qname => '', :qtype => 'NS')
       msg_comment(msg, :want_recursion => false)
@@ -206,9 +208,11 @@ module DNSCheck
     def run_query(args)
       qname = args[:qname]
       qtype = args[:qtype] || 'A'
+      maxdepth = args[:maxdepth] || 10
       Log.debug { "run_query entry qname=#{qname} qtype=#{qtype}" }
       r = Referral.new(:qname => qname, :qtype => qtype, :roots => args[:roots],
-                       :resolver => @resolver, :nsatype => 'A')
+                       :maxdepth => maxdepth, :resolver => @resolver,
+                       :nsatype => 'A')
       run(r)
       Log.debug { "run_query exit" }
       return r
