@@ -47,11 +47,14 @@ module DNSCheck
     end
     
     def msg_answers?(msg, args)
-      qclass = args[:qclass] || 'IN'
+      qname = args[:qname].to_s
+      qclass = (args[:qclass] || 'IN').to_s
+      qtype = args[:qtype].to_s
+      any = qtype.casecmp('ANY') == 0 ? true : false
       ans = msg.answer.select { |x|
-        x.name.to_s.casecmp(args[:qname].to_s) == 0 && 
-        x.klass.to_s.casecmp(qclass.to_s) == 0 &&
-        x.type.to_s.casecmp(args[:qtype].to_s) == 0
+        x.name.to_s.casecmp(qname) == 0 && 
+        x.klass.to_s.casecmp(qclass) == 0 &&
+        (any || x.type.to_s.casecmp(qtype) == 0)
       }
       Log.debug { "Answers:" + ans.size.to_s}
       return ans.size > 0 ? ans : nil

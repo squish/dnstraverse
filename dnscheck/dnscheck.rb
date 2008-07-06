@@ -39,42 +39,44 @@
 #
 
 def referral_txt_normal(r)
-  ips = ""
-  ips+= r.serverips.join(',') if r.serverips
-  txt = sprintf("%s %s (%s)", r.refid, r.server, ips)
+  txt = sprintf("%s %s (%s)", r.refid, r.server, r.txt_ips)
   return txt
 end
 
 def referral_txt_verbose(r)
-  ips = ""
-  ips+= r.serverips.join(',') if r.serverips
-  txt = sprintf("%s [%s] %s (%s) <%s>", r.refid, r.qname, r.server, ips,
-  r.bailiwick)
+  txt = sprintf("%s [%s] %s (%s) <%s>", r.refid, r.qname, r.server,
+  r.txt_ips_verbose, r.bailiwick)
   return txt
 end
 
 def progress_main(args)
   o = args[:state]
   r = args[:referral]
-  a = args[:answer]
+  stage = args[:stage]
   return if r.refid.empty?
-  if a then
+  case stage
+    when :answer then
     if o[:verbose] then
       for warning in r.warnings do
         puts "#{r.refid} WARNING: #{warning}"
       end
     end
-  else
+    if o[:allstats] then
+      r.stats_display(:prefix => "#{r.refid} Results:", :results => false)
+    end
+    when :start then
     print o[:verbose] ? referral_txt_verbose(r) : referral_txt_normal(r)
     print "\n"
   end
 end
 
 def progress_resolves(args)
-  options = args[:state]
-  referral = args[:referral]
-  unless answer then
-    print referral_txt(referral)
+  o = args[:state]
+  r = args[:referral]
+  stage = args[:stage]
+  case stage
+    when :start then
+    print o[:verbose] ? referral_txt_verbose(r) : referral_txt_normal(r)
     print "\n"
   end
 end
@@ -111,6 +113,7 @@ options[:follow_aaaa] = false
 options[:root_aaaa] = false
 options[:always_tcp] = false
 options[:allow_tcp] = false
+options[:allstats] = false
 
 opts = OptionParser.new
 opts.banner = "Usage: #{File.basename($0)} [options] DOMAIN"  
@@ -130,6 +133,7 @@ opts.on("--[no-]show-workings") { |o| options[:workings] = o }
 opts.on("--[no-]show-resolves") { |o| options[:resolves] = o }
 opts.on("--[no-]show-serverlist") { |o| options[:serverlist] = o }
 opts.on("--[no-]show-versions") { |o| options[:versions] = o }
+opts.on("--[no-]show-all-stats") { |o| options[:allstats] = o}
 opts.on_tail("-h", "--help") { RDoc::usage }
 opts.on_tail("-V", "--version") { puts Version.join('.'); exit }
 begin
@@ -184,4 +188,4 @@ result = dnscheck.run_query(:qname => options[:domainname],
                             :qtype => options[:type].to_s, :roots => roots)
 puts if options[:progress]
 puts "Results:"
-result.stats_display
+result.stats_display(:results => true, :spacing => true)

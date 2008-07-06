@@ -5,13 +5,25 @@ module DNSCheck
     
     attr_reader :server, :serverips, :qname, :qclass, :qtype, :nsatype
     attr_reader :refid, :message, :infocache, :parent, :bailiwick, :stats
-    attr_reader :warnings
+    attr_reader :warnings, :children
+    
+    def txt_ips_verbose
+      return '' unless @serverips
+      a = @serverips.map do |ip|
+        sprintf("%.1f%%=", 100 * @serverweights[ip]).concat(
+                                                            ip =~ /^key:([^:]+(:[^:]*)?)/ ? $1 : ip)
+      end
+      a.join(',')
+    end
+    
+    def txt_ips
+      return '' unless @serverips
+      @serverips.map { |ip| ip =~ /^key:([^:]+(:[^:]*)?)/ ? $1 : ip }.join(',')
+    end
     
     def to_s
-      ips = ""
-      ips+= @serverips.join(',') if @serverips
       return "#{@refid} [#{@qname}/#{@qclass}/#{@qtype}] server=#{@server} " +
-      "server_ips=#{ips} bailiwick=#{@bailiwick}"
+      "server_ips=#{txt_ips()} bailiwick=#{@bailiwick}"
     end
     
     def referral_resolution?
@@ -57,10 +69,15 @@ module DNSCheck
       @referral_resolution = args[:referral_resolution] || false # flag
       @stats = nil # will contain statistics for answers
       @stats_resolve = nil # will contain statistics for our resolve (if applic)
-      @serverweights = nil # will be set if we resolve (Hash, key is IP)
+      @serverweights = Hash.new # key is IP
       @warnings = Array.new # warnings will be placed here
       raise "Must pass Resolver" unless @resolver
       @infocache.add_hints('', args[:roots]) if args[:roots] # add root hints
+      if serverips then # we know the server weights - we're not resolving
+        for ip in serverips do
+          @serverweights[ip] = 1.0 / @serverips.length
+        end
+      end
       Log.debug { "New resolver object created: " + self.to_s }
     end
     
@@ -121,7 +138,7 @@ module DNSCheck
       Log.debug { "Calculating resolution: #{self}" }
       # create stats_resolve containing all the statistics of the resolution
       @stats_resolve = Hash.new
-      if @noglue then # referral without glue - error
+      if @noglue then # in-bailiwick referral without glue - error
         outcome = "noglue"
         key = "key:#{outcome}:#{server}:#{qname}:#{qclass}:#{qtype}".downcase
         @stats_resolve[key] = { :prob => 1.0, :server => @server,
@@ -134,7 +151,8 @@ module DNSCheck
       # now use this data to work out %age of each IP address returned
       @serverweights = Hash.new
       @stats_resolve.each_pair do |key, data|
-        if data[:answers] then
+        # key = IP or key:blah, data is hash containing :prob, etc.
+        if data[:answers] then # RR records
           # there were some answers - so add the probabilities in
           for rr in data[:answers] do
             @serverweights[rr.address.to_s]||= 0
@@ -178,17 +196,18 @@ module DNSCheck
         return
       end
       for ip in @serverips do
-        # set serverweight from resolution phase or use fixed weights
-        serverweight = @serverweights ? @serverweights[ip] : (1.0 / @serverips.length)
+        serverweight = @serverweights[ip] # fixed at initialize or at resolve
         if ip =~ /^key:/ then # resolve failed for some reason
           # pull out the statistics on the resolution and copy over
-          if not @stats[ip] then
-            # just copy the resolve error statistics for this key
-            @stats[ip] = @stats_resolve[ip].dup
-            @stats[ip][:prob]*= serverweight
-          else
-            @stats[ip][:prob]+= @stats_resolve[ip][:prob] * serverweight
+          raise "duplicate key found" if @stats[ip] # assertion
+          if @stats_resolve[ip][:prob] != serverweight then # assertion
+            puts "#{@stats_resolve[ip][:prob]} vs #{serverweight}"
+            @stats_resolve[ip].each_pair do |a,b|
+              puts a
+            end
+            raise "unexpected probability" 
           end
+          @stats[ip] = @stats_resolve[ip].dup
           next
         end
         key = nil
@@ -383,7 +402,8 @@ module DNSCheck
       end
       if @message.nil? then
         puts "ERROR: Querying #{ip} for #{@qname}/#{@qtype}"
-        return Dnsruby::ResolvTimeout.new
+        e = Dnsruby::ResolvTimeout.new "fake timeout - dnsruby bug"
+        return e
       end
       msg_validate(@message, :qname => @qname, :qtype => @qtype)
       @warnings.concat msg_comment(@message, :want_recursion => false)
@@ -399,11 +419,16 @@ module DNSCheck
       return Referral.new(refargs)
     end
     
-    def stats_display
-      s = " " * 12
+    def stats_display(args)
+      spacing = args[:spacing] || false
+      results = args[:results] || true
+      prefix = args[:prefix] || ''
+      indent = args[:indent] || "#{prefix}            "
+      first = true
       @stats.each_pair do |key, data|
-        puts
-        printf "%5.1f%%: ", data[:prob] * 100
+        puts if spacing and not first
+        first = false
+        printf "#{prefix}%5.1f%%: ", data[:prob] * 100
         if key =~ /^key:exception:/ then
           puts "caused exception #{data[:msg]} at #{data[:server]} (#{data[:ip]})"
         elsif key =~ /^key:error:/ then
@@ -417,12 +442,18 @@ module DNSCheck
         elsif key =~ /^key:noglue:/ then
           parent = data[:referral].parent
           puts "No glue for #{data[:server]}"
-          puts "#{s}Question: #{data[:qname]}/#{data[:qclass]}/#{data[:qtype]}"
-          puts "#{s}Referral: #{parent.server} to #{data[:server]} for #{data[:referral].bailiwick}"
+          if results then
+            puts "#{indent}Question: " +
+            "#{data[:qname]}/#{data[:qclass]}/#{data[:qtype]}"
+            puts "#{indent}Referral: #{parent.server} to " +
+            "#{data[:server]} for #{data[:referral].bailiwick}"
+          end
         elsif key =~ /^key:answer:/ then
-          puts "Answers from #{data[:server]} (#{data[:ip]})"
-          for rr in data[:answers] do
-            puts "#{s}#{rr}"
+          puts "Answer from #{data[:server]} (#{data[:ip]})"
+          if results then
+            for rr in data[:answers] do
+              puts "#{indent}#{rr}"
+            end
           end
         else
           puts "#{key}"

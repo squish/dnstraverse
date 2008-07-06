@@ -58,7 +58,7 @@ module DNSCheck
       msg_comment(msg, :want_recursion => true)
       ans1 = msg_answers?(msg, :qname => '', :qtype => 'NS')
       unless ans1 then
-        raise ResolveError, "No root nameservers found: " + e.to_str
+        raise ResolveError, "No root nameservers found"
       end
       roots = ans1.map {|x| x.domainname.to_s }
       Log.debug { "Local resolver lists: " + roots.join(', ') }
@@ -118,7 +118,7 @@ module DNSCheck
           r.resolve_calculate
           refres = r.referral_resolution?
           p = (refres == true ? @progress_resolve : @progress_main)
-          p.call(:state => @state, :referral => r, :answer => true)
+          p.call(:state => @state, :referral => r, :stage => :resolve)
           stack << r # now need to process
           next
           when :calc_answer
@@ -126,12 +126,12 @@ module DNSCheck
           r.answer_calculate
           refres = r.referral_resolution?
           p = (refres == true ? @progress_resolve : @progress_main)
-          p.call(:state => @state, :referral => r, :answer => true)
+          p.call(:state => @state, :referral => r, :stage => :answer)
           next
         else
           refres = r.referral_resolution?
           p = (refres == true ? @progress_resolve : @progress_main)
-          p.call(:state => @state, :referral => r, :answer => false)
+          p.call(:state => @state, :referral => r, :stage => :start)
         end
         unless r.resolved? then
           # get resolve Referral objects, place on stack with placeholder
