@@ -22,6 +22,8 @@ module DNSCheck
       self
     end
     
+    # adds the resource records, clearing out any existing entries with the
+    # same details
     def add(rrs)
       rrs.each {|rr| @data[key(rr)] = Array.new } # clear out
       for rr in rrs do
@@ -29,6 +31,22 @@ module DNSCheck
         Log.debug { "Adding to infocache: #{rr}" }
       end
       return nil
+    end
+    
+    # array of hashes containing :name (server name) and :ips (array of strings)
+    # set domain to '' for setting root hints
+    def add_hints(domain, ns)
+      rrs = Array.new
+      for server in ns do
+        rrs.push Dnsruby::RR.create(:name => domain, :ttl => 0,
+                                    :type => 'NS', :domainname => server[:name])
+        for ip in server[:ips] do
+          type = (ip.to_s =~ /\A(\d+)\.(\d+)\.(\d+)\.(\d+)\z/) ? 'A' : 'AAAA'
+          rrs.push Dnsruby::RR.create(:type => type, :ttl => 0,
+                                      :name => server[:name], :address => ip)
+        end
+      end
+      return add(rrs)
     end
     
     def get?(args)
@@ -42,11 +60,11 @@ module DNSCheck
     def get_ns?(domain) # get an appropriate ns based on domain
       domain = domain.to_s
       while true do
-        Log.debug { "get_ns? checking #{domain}" }
+        Log.debug { "Infocache get_ns? checking NS records for '#{domain}'" }
         rrs = get?(:qname => domain, :qtype => 'NS')
         return rrs if rrs
-        return false unless i = domain.index('.')
-        domain = domain[i+1..-1]
+        return false if domain == ''
+        domain = (i = domain.index('.')) ? domain[i+1..-1] : ''
       end
     end
   end
