@@ -38,7 +38,14 @@
 # My use only; no license granted; do not distribute
 #
 
-def referral_txt(r)
+def referral_txt_normal(r)
+  ips = ""
+  ips+= r.serverips.join(',') if r.serverips
+  txt = sprintf("%s %s (%s)", r.refid, r.server, ips)
+  return txt
+end
+
+def referral_txt_verbose(r)
   ips = ""
   ips+= r.serverips.join(',') if r.serverips
   txt = sprintf("%s [%s] %s (%s) <%s>", r.refid, r.qname, r.server, ips,
@@ -47,22 +54,24 @@ def referral_txt(r)
 end
 
 def progress_main(args)
-  mystate = args[:state]
-  referral = args[:referral]
-  answer = args[:answer]
-  return if referral.refid.empty?
-  if answer then
-    for warning in referral.warnings do
-      puts "#{referral.refid} WARNING: #{warning}"
+  o = args[:state]
+  r = args[:referral]
+  a = args[:answer]
+  return if r.refid.empty?
+  if a then
+    if o[:verbose] then
+      for warning in r.warnings do
+        puts "#{r.refid} WARNING: #{warning}"
+      end
     end
   else
-    print referral_txt(referral)
+    print o[:verbose] ? referral_txt_verbose(r) : referral_txt_normal(r)
     print "\n"
   end
 end
 
 def progress_resolves(args)
-  mystate = args[:state]
+  options = args[:state]
   referral = args[:referral]
   unless answer then
     print referral_txt(referral)
@@ -136,8 +145,7 @@ end
 Log.level = options[:debug] > 0 ? Logger::DEBUG : Logger::UNKNOWN
 Log.debug {"Options chosen:\n" }
 Log.debug { options.map {|x,y| "  #{x}: #{y}" }.join("\n") }
-state = Hash.new
-args = { :state => state, :aaaa => options[:follow_aaaa] }
+args = { :state => options, :aaaa => options[:follow_aaaa] }
 args[:progress_main] = method(:progress_main) if options[:progress]
 args[:progress_resolve] = method(:progress_resolves) if options[:progress] and options[:resolves]
 #args[:summary] = method(:summary) if options[:summary]
@@ -161,7 +169,7 @@ else
   end
 end
 puts "Using #{root} (#{rootip}) as initial root"
-if args[:allroots] then
+if options[:allroots] then
   roots = dnscheck.find_all_roots(:root => root, :rootip => rootip,
                                   :aaaa => options[:root_aaaa] )
   puts "All roots:"

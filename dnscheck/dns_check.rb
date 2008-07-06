@@ -50,7 +50,7 @@ module DNSCheck
       # get nameservers for root
       begin
         msg = @lresolver.query('', 'NS')
-      rescue e
+      rescue => e
         puts "Failed to get roots, local resolver returned exception: #{e}"
         raise e
       end
