@@ -1,4 +1,4 @@
-require 'Log'
+require 'log'
 
 module DNSCheck
   class InfoCache

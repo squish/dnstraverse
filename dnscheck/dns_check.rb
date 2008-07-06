@@ -1,5 +1,5 @@
 require 'dnsruby'
-require 'dnsruby/TheLog'
+require 'Dnsruby/TheLog'
 
 require 'info_cache'
 require 'log'
