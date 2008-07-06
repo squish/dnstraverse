@@ -192,20 +192,22 @@ module DNSCheck
         key = nil
         if @responses[ip] then
           msg = @responses[ip]
-          qtype = msg.question[0].qtype
-          qclass = msg.question[0].qclass
-          qname = msg_follow_cnames(msg, :qname => msg.question[0].qname,
-                                    :qtype => qtype)
+          our_qname = @qname
+          unless msg.is_a? Exception then
+            our_qname = msg_follow_cnames(msg, :qname => our_qname,
+                                          :qtype => @qtype)
+          end
           ans = nil
           # check all the immediate (non-referral) conditions
-          q = "#{ip}:#{qname}:#{qclass}:#{qtype}"
+          q = "#{ip}:#{our_qname}:#{@qclass}:#{@qtype}"
           if msg.is_a? Exception then
             outcome = "exception"
             key = "key:#{outcome}:#{q}:#{msg}".downcase
           elsif msg.header.rcode != NOERROR then
             outcome = "error"
             key = "key:#{outcome}:#{q}:#{msg.header.rcode}".downcase
-          elsif (ans = msg_answers?(msg, :qname => qname, :qtype => qtype)) then
+          elsif (ans = msg_answers?(msg, :qname => our_qname,
+                                    :qtype => @qtype)) then
             outcome = "answer"
             key = "key:#{outcome}:#{q}".downcase
           elsif msg_nodata?(msg) then
@@ -216,8 +218,8 @@ module DNSCheck
         if key then
           # immediate (non-referral) conditions - no children
           @stats[key] = { :prob => serverweight, :server => @server,
-            :ip => ip, :qname => qname, :qclass => qclass, :qtype => qtype,
-            :msg => msg, :outcome => outcome, :answers => ans,
+            :ip => ip, :qname => our_qname, :qclass => @qclass,
+            :qtype => @qtype, :msg => msg, :outcome => outcome, :answers => ans,
             :referral => self }
         else
           stats_calculate_children(@stats, @children[ip], serverweight)
