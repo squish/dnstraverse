@@ -1,4 +1,4 @@
-require 'log'
+require 'dnstraverse/log'
 
 module DNSCheck
   class InfoCache
@@ -63,7 +63,9 @@ module DNSCheck
         Log.debug { "Infocache get_ns? checking NS records for '#{domain}'" }
         rrs = get?(:qname => domain, :qtype => 'NS')
         return rrs if rrs
-        return false if domain == ''
+        if domain == '' then
+          raise "No nameservers available for #{domain} -- no root hints set??"
+        end
         domain = (i = domain.index('.')) ? domain[i+1..-1] : ''
       end
     end

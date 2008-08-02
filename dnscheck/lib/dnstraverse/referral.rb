@@ -10,8 +10,7 @@ module DNSCheck
     def txt_ips_verbose
       return '' unless @serverips
       a = @serverips.map do |ip|
-        sprintf("%.1f%%=", 100 * @serverweights[ip]).concat(
-                                                            ip =~ /^key:([^:]+(:[^:]*)?)/ ? $1 : ip)
+        sprintf("%.1f%%=", 100 * @serverweights[ip]).concat(ip =~ /^key:([^:]+(:[^:]*)?)/ ? $1 : ip)
       end
       a.join(',')
     end
@@ -88,11 +87,6 @@ module DNSCheck
       newbailiwick = nil
       # search for best NS records in authority cache based on this domain name
       ns = ourinfocache.get_ns?(domain)
-      unless ns then
-        # shouldn't happen because infocache should have been populated with
-        # root servers
-        raise "No nameservers available for #{domain} -- no root hints set??"
-      end
       starters = Array.new
       # look up in additional cache corresponding IP addresses if we know them
       for rr in ns do
@@ -212,19 +206,21 @@ module DNSCheck
           next
         end
         key = nil
-        if @responses[ip] then
+        # XXX must always have a response surely?
+#        if @responses[ip] then
           msg = @responses[ip]
           our_qname = @qname
           unless msg.is_a? Exception then
             our_qname = msg_follow_cnames(msg, :qname => our_qname,
                                           :qtype => @qtype)
           end
-          ans = nil
+          ans = exception_msg = nil
           # check all the immediate (non-referral) conditions
           q = "#{ip}:#{our_qname}:#{@qclass}:#{@qtype}"
           if msg.is_a? Exception then
             outcome = "exception"
-            key = "key:#{outcome}:#{q}:#{msg}".downcase
+            exception_msg = msg.to_s
+            key = "key:#{outcome}:#{q}:#{exception_msg}".downcase
           elsif msg.header.rcode != NOERROR then
             outcome = "error"
             key = "key:#{outcome}:#{q}:#{msg.header.rcode}".downcase
@@ -236,13 +232,19 @@ module DNSCheck
             outcome = "nodata"
             key = "key:#{outcome}:#{q}".downcase
           end
-        end
+          # a response that we couldn't parse for valid referrals?
+          if key.nil? and @children[ip].is_a? Exception then
+            outcome = "referral exception"
+            exception_msg = @children[ip].to_s
+            key = "key:#{outcome}:#{q}:#{exception_msg}".downcase
+          end
+#        end
         if key then
           # immediate (non-referral) conditions - no children
           @stats[key] = { :prob => serverweight, :server => @server,
             :ip => ip, :qname => our_qname, :qclass => @qclass,
             :qtype => @qtype, :msg => msg, :outcome => outcome, :answers => ans,
-            :referral => self }
+            :exception_msg => exception_msg, :referral => self }
         else
           stats_calculate_children(@stats, @children[ip], serverweight)
         end
@@ -280,6 +282,7 @@ module DNSCheck
         process_add_roots(args)
       end
       # return a set of Referral objects that need to be processed
+      # XXX flatten really necessary?
       return @children.values.flatten.select {|x| x.is_a? Referral}
     end
     
@@ -364,21 +367,27 @@ module DNSCheck
         starters, newbailiwick = get_startservers(:domain => name,
                                                   :infocache => newinfocache)
         starternames = starters.map { |x| x[:name].to_s.downcase }
-        unknown_starternames = starternames
-        for nsrr in (msg_authority(m))[0] do
-          if nsrr.name.to_s != newbailiwick.to_s or
-            not starternames.include?(nsrr.domainname.to_s.downcase) then
-            @warnings.push "Authority '#{nsrr}' not used"
-          end
-          unknown_starternames.delete(nsrr.domainname.to_s.downcase)
+        #        unknown_starternames = starternames
+        #        for nsrr in (msg_authority(m))[0] do
+        #          if nsrr.name.to_s != newbailiwick.to_s or
+        #            not starternames.include?(nsrr.domainname.to_s.downcase) then
+        #            @warnings.push "Authority '#{nsrr}' not used - lame delegation?"
+        #          end
+        #          unknown_starternames.delete(nsrr.domainname.to_s.downcase)
+        #        end
+        #        for startername in unknown_starternames do
+        #          @warnings.push "Using '#{startername}' which wasn't in authority"
+        #        end
+        #        #raise "Assertion failed for non zero referrals" if refs.size < 1
+        authorities = (msg_authority(m))[0]
+        authoritynames = authorities.map { |rr| rr.domainname.to_s.downcase }
+        if starternames.sort == authoritynames.sort then
+          @children[ip] = make_referrals(:starters => starters, :qname => name,
+                                         :bailiwick => newbailiwick,
+                                         :infocache => newinfocache)
+        else
+          @children[ip] = RuntimeError.new "Improper or lame delegation"
         end
-        for startername in unknown_starternames do
-          @warnings.push "Using '#{startername}' which wasn't in authority"
-        end
-        #raise "Assertion failed for non zero referrals" if refs.size < 1
-        @children[ip] = make_referrals(:starters => starters, :qname => name,
-                                       :bailiwick => newbailiwick,
-                                       :infocache => newinfocache)
       end
     end
     
@@ -398,19 +407,10 @@ module DNSCheck
     
     def process_normal_makequery_with_udpsize(udpsize)
       @resolver.udp_size = udpsize
-      begin
-        message = @resolver.query(@qname, @qtype)
-      rescue Dnsruby::ResolvTimeout => e
-        return e
-      end
-      if message.nil? then
-        puts "ERROR: Querying #{ip} for #{@qname}/#{@qtype}"
-        message = Dnsruby::ResolvTimeout.new "fake timeout - dnsruby bug"
-        return message
-      end
-      return message
+      return @resolver.query(@qname, @qtype)
     end
     
+    # XXX dig news.bbc.co.uk @212.58.224.21 - SERVFAIL for 2 mins every 15 mins?
     def process_normal_makequery_message
       my_udp_size = @resolver.udp_size
       message = process_normal_makequery_with_udpsize(my_udp_size)
@@ -434,8 +434,10 @@ module DNSCheck
       Log.debug { "Querying #{ip} for #{@qname}/#{@qtype}" }
       @resolver.nameserver = ip
       @message = process_normal_makequery_message
-      msg_validate(@message, :qname => @qname, :qtype => @qtype)
-      @warnings.concat msg_comment(@message, :want_recursion => false)
+      unless @message.is_a? Exception then
+        msg_validate(@message, :qname => @qname, :qtype => @qtype)
+        @warnings.concat msg_comment(@message, :want_recursion => false)
+      end
       return @message
     end
     
@@ -459,8 +461,9 @@ module DNSCheck
         puts if spacing and not first
         first = false
         printf "#{prefix}%5.1f%%: ", data[:prob] * 100
-        if key =~ /^key:exception:/ then
-          puts "caused exception #{data[:msg]} at #{data[:server]} (#{data[:ip]})"
+        if key =~ /^key:(referral )?exception:/ then
+          puts "Caused exception at #{data[:server]} (#{data[:ip]})"
+          puts "#{indent}#{data[:exception_msg]}"
         elsif key =~ /^key:error:/ then
           if data[:msg].header.rcode == Dnsruby::RCode::NXDOMAIN then
             puts "NXDOMAIN (no such domain) at #{data[:server]} (#{data[:ip]})"
@@ -486,7 +489,8 @@ module DNSCheck
             end
           end
         else
-          puts "#{key}"
+          puts "Stopped at #{data[:server]} (#{data[:ip]})"
+          puts "#{indent}#{key}"
         end
       end
     end

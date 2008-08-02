@@ -86,6 +86,10 @@ def progress_resolves(args)
   end
 end
 
+def require_relative(path)
+  require File.join(File.dirname(caller[0]), path.to_str)
+end
+
 # stdlib
 require 'optparse'
 require 'ostruct'
@@ -95,8 +99,8 @@ require 'rdoc/usage'
 require 'pp'
 
 # dnscheck
-require 'dns_check'
-require 'log'
+require 'dnstraverse/traverser'
+require 'dnstraverse/log'
 
 Version = [ 0, 0, 1].freeze
 
@@ -170,7 +174,7 @@ args[:loglevel] = options[:debug] >= 1 ? Logger::DEBUG : Logger::UNKNOWN
 args[:libloglevel] = options[:debug] >= 2 ? Logger::DEBUG : Logger::UNKNOWN
 args[:always_tcp] = true if options[:always_tcp]
 args[:allow_tcp] = true if options[:allow_tcp]
-dnscheck = DNSCheck::Resolver.new(args)
+dnscheck = DNSCheck::Traverser.new(args)
 if options[:root] then
   root = options[:root]
   rootip = root # XXX fix me need to look up IP address if not passed
@@ -198,5 +202,10 @@ result = dnscheck.run_query(:qname => options[:domainname],
                             :qtype => options[:type].to_s, :roots => roots,
                             :maxdepth => options[:maxdepth])
 puts if options[:progress]
+if options[:verbose] then
+  requests, hits = dnscheck.cache_stats
+  puts "Stats: #{requests} queries, #{hits} cache hits"
+  puts
+end
 puts "Results:"
 result.stats_display(:results => true, :spacing => true)

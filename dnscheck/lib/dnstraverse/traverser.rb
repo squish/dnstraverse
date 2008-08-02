@@ -1,15 +1,14 @@
 require 'dnsruby'
 require 'Dnsruby/TheLog'
-
-require 'info_cache'
-require 'log'
-require 'message_utility'
-require 'caching_resolver'
-require 'referral'
+require 'dnstraverse/info_cache'
+require 'dnstraverse/log'
+require 'dnstraverse/message_utility'
+require 'dnstraverse/caching_resolver'
+require 'dnstraverse/referral'
 
 module DNSCheck
   
-  class Resolver
+  class Traverser
     include MessageUtility
     
     def progress_null(args)
@@ -217,6 +216,11 @@ module DNSCheck
       Log.debug { "run_query exit" }
       return r
     end
+    
+    def cache_stats
+      return @resolver.requests, @resolver.cache_hits
+    end
+    
   end
   
 end
