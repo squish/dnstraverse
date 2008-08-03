@@ -61,8 +61,7 @@ module DNSTraverse
       @nsatype = args[:nsatype] || :A
       @infocache = args[:infocache] || DNSTraverse::InfoCache.new
       @roots = args[:roots]
-      @resolves = nil
-      @message = nil # our message for this particular referral question
+      @resolves = nil # Array of referral objects for resolving phase
       @refid = args[:refid] || ''
       @server = args[:server] || nil # nil for the root-root server
       @serverips = args[:serverips] || nil
@@ -89,7 +88,45 @@ module DNSTraverse
       Log.debug { "New resolver object created: " + self.to_s }
     end
     
-    def inside_bailiwick(name)
+    def showstats
+      s = Hash.new
+      ObjectSpace.each_object do |o|
+        s[o.class]||= 0
+        s[o.class]= s[o.class] + 1
+      end
+      s.sort {|a,b| a[1] <=> b[1]}.each do | c |
+        puts "#{c[1]} #{c[0]}"
+      end
+    end
+    
+    # clean up the workings
+    def cleanup
+      @infocache = nil
+      @cacheable_good = @cacheable_bad = nil
+      @starters = @starters_bailiwick = nil
+      @auth_ns = @auth_soa = @auth_other = nil
+      @responses.each_pair do |ip, response|
+        # Clean up our response
+        response.cleanup
+      end
+      GC.start
+#      showstats
+    end
+    
+    # Clean ourselves and all children objects
+    def cleanup_all
+      # Clean up referral objects from resolve phase
+      @resolves.each do |child|
+        child.cleanup_all
+      end
+      # Clean up our child referral objects from main phase
+      @children.each_pair do |ip, child|
+        child.cleanup_all
+      end
+      cleanup
+    end
+    
+    def inside_bailiwick?(name)
       return true if @bailiwick.nil?
       bwend = ".#{@bailiwick}"
       namestr = name.to_s
@@ -101,7 +138,7 @@ module DNSTraverse
     # resolve server to serverips, return list of Referral objects to process
     def resolve(args)
       raise "This Referral object has already been resolved" if resolved?
-      if inside_bailiwick(@server) then
+      if inside_bailiwick?(@server) then
         # foo.net IN NS ns.foo.net - no IP cached & no glue = failure
         Log.debug { "Attempt to resolve #{@server} with a bailiwick referral " +
                     " of #{bailiwick} - no glue record provided" }
@@ -119,8 +156,7 @@ module DNSTraverse
                           :qname => @server, :qclass => 'IN',
         :qtype => @nsatype, :bailiwick => newbailiwick,
         :refid => "#{refid}.#{child_refid}")
-        @resolves||= Array.new
-        @resolves.push r
+         (@resolves||= []) << r
         child_refid+= 1
       end
       # return a set of Referral objects that need to be processed
@@ -356,12 +392,12 @@ module DNSTraverse
     def process_normal_makequery(ip)  
       Log.debug { "Querying #{ip} for #{@qname}/#{@qtype}" }
       @resolver.nameserver = ip
-      @message = process_normal_makequery_message
-      unless @message.is_a? Exception then
-        msg_validate(@message, :qname => @qname, :qtype => @qtype)
-        @warnings.concat msg_comment(@message, :want_recursion => false)
+      message = process_normal_makequery_message
+      unless message.is_a? Exception then
+        msg_validate(message, :qname => @qname, :qtype => @qtype)
+        @warnings.concat msg_comment(message, :want_recursion => false)
       end
-      return @message
+      return message
     end
     
     def make_referral(args)

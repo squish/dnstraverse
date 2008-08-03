@@ -38,8 +38,16 @@ module DNSTraverse
       @key = "key:#{@ip}:#{@status}:#{@qname}:#{@qclass}:#{@qtype}" # for stats
       return self
     end
+
+    # clean up the workings
+    def cleanup
+      @infocache = nil
+      @cacheable_good = @cacheable_bad = nil
+      @starters = @starters_bailiwick = nil
+      @auth_ns = @auth_soa = @auth_other = nil
+    end
     
-    def inside_bailiwick(name)
+    def inside_bailiwick?(name)
       return true if @bailiwick.nil?
       bwend = ".#{@bailiwick}"
       namestr = name.to_s
@@ -59,7 +67,7 @@ module DNSTraverse
       @infocache.add(@cacheable_good)
       @endname = msg_follow_cnames(@message, :qname => @qname, :qtype => @qtype,
                                    :bailiwick => @bailiwick)
-      return process_restart unless inside_bailiwick(@endname)
+      return process_restart unless inside_bailiwick?(@endname)
       return process_error if @message.header.rcode != NOERROR
       @answers = msg_answers?(@message, :qname => @endname, :qtype => qtype)
       return process_answered if @answers

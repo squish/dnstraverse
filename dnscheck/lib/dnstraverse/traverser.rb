@@ -39,9 +39,11 @@ module DNSTraverse
       Log.debug { "Creating remote resolver object"}
       @resolver = CachingResolver.new(resargs) # used for set nameservers
       @resolver.udp_size = udpsize.to_i
+      @resolver.use_eventmachine(false)
       Log.debug { "Creating local resolver object"}
       @lresolver = Dnsruby::Resolver.new(resargs) # left on local default
       @lresolver.udp_size = udpsize.to_i
+      @lresolver.use_eventmachine(false)
       self
     end
     
@@ -52,7 +54,7 @@ module DNSTraverse
       # get nameservers for root
       begin
         msg = @lresolver.query('', 'NS')
-      rescue => e
+      rescue Exception => e
         puts "Failed to get roots, local resolver returned exception: #{e}"
         raise e
       end
@@ -96,8 +98,9 @@ module DNSTraverse
       raise ResolveError, "No address could be found for any root server"
     end
     
-    def run(r)
+    def run(r, args)
       Log.debug { "run entry, initialising stack to: " + r.to_s }
+      cleanup = args[:cleanup] || true
       stack = Array.new
       stack << r
       while stack.size > 0 do
@@ -129,6 +132,7 @@ module DNSTraverse
           refres = r.referral_resolution?
           p = (refres == true ? @progress_resolve : @progress_main)
           p.call(:state => @state, :referral => r, :stage => :answer)
+          r.cleanup if cleanup
           next
         else
           refres = r.referral_resolution?
@@ -208,11 +212,12 @@ module DNSTraverse
       qname = args[:qname]
       qtype = args[:qtype] || 'A'
       maxdepth = args[:maxdepth] || 10
+      cleanup = args[:cleanup] || true
       Log.debug { "run_query entry qname=#{qname} qtype=#{qtype}" }
       r = Referral.new(:qname => qname, :qtype => qtype, :roots => args[:roots],
                        :maxdepth => maxdepth, :resolver => @resolver,
                        :nsatype => 'A')
-      run(r)
+      run(r, :cleanup => cleanup)
       Log.debug { "run_query exit" }
       return r
     end
