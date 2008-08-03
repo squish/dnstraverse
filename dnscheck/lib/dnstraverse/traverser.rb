@@ -5,6 +5,7 @@ require 'dnstraverse/log'
 require 'dnstraverse/message_utility'
 require 'dnstraverse/caching_resolver'
 require 'dnstraverse/referral'
+require 'socket'
 
 module DNSTraverse
   
@@ -15,6 +16,7 @@ module DNSTraverse
     end
     
     def initialize(args)
+      Socket.do_not_reverse_lookup = true
       Log.level = args[:loglevel] if args[:loglevel]
       Log.debug { "Initialize with args: " + args.inspect }
       Dnsruby::TheLog.level = args[:libloglevel] if args[:libloglevel]
@@ -37,13 +39,12 @@ module DNSTraverse
         :ignore_truncation => ignore_truncation, :src_address => srcaddr,
         :udp_size => udpsize.to_i }
       Log.debug { "Creating remote resolver object"}
+      CachingResolver.use_eventmachine(false)
       @resolver = CachingResolver.new(resargs) # used for set nameservers
       @resolver.udp_size = udpsize.to_i
-      @resolver.use_eventmachine(false)
       Log.debug { "Creating local resolver object"}
       @lresolver = Dnsruby::Resolver.new(resargs) # left on local default
       @lresolver.udp_size = udpsize.to_i
-      @lresolver.use_eventmachine(false)
       self
     end
     
@@ -100,7 +101,7 @@ module DNSTraverse
     
     def run(r, args)
       Log.debug { "run entry, initialising stack to: " + r.to_s }
-      cleanup = args[:cleanup] || true
+      cleanup = args[:cleanup].nil? ? true : args[:cleanup]
       stack = Array.new
       stack << r
       while stack.size > 0 do
@@ -132,7 +133,9 @@ module DNSTraverse
           refres = r.referral_resolution?
           p = (refres == true ? @progress_resolve : @progress_main)
           p.call(:state => @state, :referral => r, :stage => :answer)
+          Log.debug { "cleanup" }
           r.cleanup if cleanup
+          Log.debug { "cleanup end" }
           next
         else
           refres = r.referral_resolution?
@@ -212,7 +215,7 @@ module DNSTraverse
       qname = args[:qname]
       qtype = args[:qtype] || 'A'
       maxdepth = args[:maxdepth] || 10
-      cleanup = args[:cleanup] || true
+      cleanup = args[:cleanup].nil? ? true : args[:cleanup]
       Log.debug { "run_query entry qname=#{qname} qtype=#{qtype}" }
       r = Referral.new(:qname => qname, :qtype => qtype, :roots => args[:roots],
                        :maxdepth => maxdepth, :resolver => @resolver,

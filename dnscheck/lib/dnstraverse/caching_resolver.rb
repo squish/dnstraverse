@@ -35,7 +35,7 @@ module DNSTraverse
         send_async(msg, q)
         id, result, error = q.pop
         answer = result || error
-      rescue Exception => e
+      rescue => e
         answer = RuntimeError.new "Dnsruby failure: " + e.to_s
       end  
       @cache[key] = answer

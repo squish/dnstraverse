@@ -51,6 +51,8 @@ def referral_txt_verbose(r)
   return txt
 end
 
+# TODO: warnings aren't in referral object any more, they are in bubbled up to response object from decoded_query, and there are several for each referral object as each IP address for a referral could have warnings.
+# TODO: display warnings after each response object is created
 def progress_main(args)
   o = args[:state]
   r = args[:referral]
@@ -174,38 +176,43 @@ args[:loglevel] = options[:debug] >= 1 ? Logger::DEBUG : Logger::UNKNOWN
 args[:libloglevel] = options[:debug] >= 2 ? Logger::DEBUG : Logger::UNKNOWN
 args[:always_tcp] = true if options[:always_tcp]
 args[:allow_tcp] = true if options[:allow_tcp]
-dnscheck = DNSTraverse::Traverser.new(args)
-if options[:root] then
-  root = options[:root]
-  rootip = root # XXX fix me need to look up IP address if not passed
-else
-  begin
-   (root, rootip) = dnscheck.get_a_root(:aaaa => options[:root_aaaa])
-  rescue DNSTraverse::ResolveError => e
-    puts "Failed to find a root: " + e.message
-    exit 2
+begin
+  dnscheck = DNSTraverse::Traverser.new(args)
+  if options[:root] then
+    root = options[:root]
+    rootip = root # XXX fix me need to look up IP address if not passed
+  else
+    begin
+     (root, rootip) = dnscheck.get_a_root(:aaaa => options[:root_aaaa])
+    rescue DNSTraverse::ResolveError => e
+      puts "Failed to find a root: " + e.message
+      exit 2
+    end
   end
-end
-puts "Using #{root} (#{rootip}) as initial root"
-if options[:allroots] then
-  roots = dnscheck.find_all_roots(:root => root, :rootip => rootip,
-                                  :aaaa => options[:root_aaaa] )
-  puts "All roots:"
-  for aroot in roots do
-    puts "  #{aroot[:name]} #{aroot[:ips].join(', ')}"
+  puts "Using #{root} (#{rootip}) as initial root"
+  if options[:allroots] then
+    roots = dnscheck.find_all_roots(:root => root, :rootip => rootip,
+                                    :aaaa => options[:root_aaaa] )
+    puts "All roots:"
+    for aroot in roots do
+      puts "  #{aroot[:name]} #{aroot[:ips].join(', ')}"
+    end
+  else
+    roots = [ { :name => root, :ips => [ rootip ] } ]
   end
-else
-  roots = [ { :name => root, :ips => [ rootip ] } ]
+  puts "Running query #{options[:domainname]} type #{options[:type]}"
+  result = dnscheck.run_query(:qname => options[:domainname],
+                              :qtype => options[:type].to_s, :roots => roots,
+                              :maxdepth => options[:maxdepth], :cleanup => true)
+  puts if options[:progress]
+  if options[:verbose] then
+    requests, hits = dnscheck.cache_stats
+    puts "Stats: #{requests} queries, #{hits} cache hits"
+    puts
+  end
+  puts "Results:"
+  result.stats_display(:results => true, :spacing => true)
+  puts UDPSocket.do_not_reverse_lookup
+rescue Interrupt => e
+  puts "Interrupted by user"
 end
-puts "Running query #{options[:domainname]} type #{options[:type]}"
-result = dnscheck.run_query(:qname => options[:domainname],
-                            :qtype => options[:type].to_s, :roots => roots,
-                            :maxdepth => options[:maxdepth])
-puts if options[:progress]
-if options[:verbose] then
-  requests, hits = dnscheck.cache_stats
-  puts "Stats: #{requests} queries, #{hits} cache hits"
-  puts
-end
-puts "Results:"
-result.stats_display(:results => true, :spacing => true)

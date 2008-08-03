@@ -1,5 +1,6 @@
 require 'dnstraverse/response'
 require 'dnstraverse/info_cache'
+require 'dnstraverse/decoded_query_cache'
 
 module DNSTraverse
   
@@ -12,6 +13,7 @@ module DNSTraverse
     attr_reader :server, :serverips, :qname, :qclass, :qtype, :nsatype
     attr_reader :refid, :message, :infocache, :parent, :bailiwick, :stats
     attr_reader :warnings, :children, :parent_ip
+    attr_reader :decoded_query_cache
     
     def txt_ips_verbose
       return '' unless @serverips
@@ -72,6 +74,7 @@ module DNSTraverse
       @parent = args[:parent] || nil # Parent Referral
       @parent_ip = args[:parent_ip] || nil # Parent Referral IP if applicable
       @maxdepth = args[:maxdepth] || 10 # maximum depth before error
+      @decoded_query_cache = args[:decoded_query_cache]
       @noglue = false # flag to indicate failure due to referral without glue
       @referral_resolution = args[:referral_resolution] || false # flag
       @stats = nil # will contain statistics for answers
@@ -80,6 +83,10 @@ module DNSTraverse
       @warnings = Array.new # warnings will be placed here
       raise "Must pass Resolver" unless @resolver
       @infocache.add_hints('', args[:roots]) if args[:roots] # add root hints
+      unless @decoded_query_cache then
+        dcq_args = { :resolver => @resolver}
+        @decoded_query_cache = DNSTraverse::DecodedQueryCache.new(dcq_args)
+      end
       if serverips then # we know the server weights - we're not resolving
         for ip in serverips do
           @serverweights[ip] = 1.0 / @serverips.length
@@ -109,8 +116,6 @@ module DNSTraverse
         # Clean up our response
         response.cleanup
       end
-      GC.start
-#      showstats
     end
     
     # Clean ourselves and all children objects
@@ -136,7 +141,7 @@ module DNSTraverse
     end
     
     # resolve server to serverips, return list of Referral objects to process
-    def resolve(args)
+    def resolve(*args)
       raise "This Referral object has already been resolved" if resolved?
       if inside_bailiwick?(@server) then
         # foo.net IN NS ns.foo.net - no IP cached & no glue = failure
@@ -171,7 +176,8 @@ module DNSTraverse
         e = NoGlueError.new "No glue provided"
         r = DNSTraverse::Response.new(:message => e, :qname => @server,
                                       :qclass => @qclass, :qtype => @nsatype,
-                                      :ip => @parent_ip, :bailiwick => @bailiwick)
+                                      :ip => @parent_ip, :bailiwick => @bailiwick,
+                                      :decoded_query_cache => @decoded_query_cache)
         @stats_resolve[r.key] = { :prob => 1.0, :response => r,
           :referral => self }
       else
@@ -244,7 +250,7 @@ module DNSTraverse
           stats_calculate_children(@stats, @children[ip], serverweight)
         else
           response = @responses[ip]
-          @stats[response.key] = { :prob => serverweight,
+          @stats[response.stats_key] = { :prob => serverweight,
             :response => response, :referral => self }
         end
       end
@@ -325,24 +331,29 @@ module DNSTraverse
       #        end
       #      end
       for ip in @serverips do
+        Log.debug { "Process normal #{ip}" }
         next if ip =~ /^key:/ # resolve failed on something
+        m = nil
         if @refid.scan(/\./).length >= @maxdepth.to_i then
           m = RuntimeError.new "Maxdepth #{@maxdepth} exceeded"
-        else
-          m = process_normal_makequery(ip) # could also be an exception
         end
+        Log.debug { "Process normal #{ip} - making response" }
         r = DNSTraverse::Response.new(:message => m, :qname => @qname,
                                       :qclass => @qclass, :qtype => @qtype,
                                       :bailiwick => @bailiwick,
-                                      :infocache => @infocache, :ip => ip)
+                                      :infocache => @infocache, :ip => ip,
+                                      :decoded_query_cache => @decoded_query_cache)
+        Log.debug { "Process normal #{ip} - done making response" }
         @responses[ip] = r
         case r.status
           when :restart, :referral then
+          Log.debug { "Process normal #{ip} - making referrals" }
           @children[ip] = make_referrals(:qname => r.endname,
                                          :starters => r.starters,
                                          :bailiwick => r.starters_bailiwick,
                                          :infocache => r.infocache,
                                          :parent_ip => ip)
+          Log.debug { "Process normal #{ip} - done making referrals" }
           # XXX shouldn't be any children unless referrals
           #when :referral_lame then
           #@children[ip] = RuntimeError.new "Improper or lame delegation"
@@ -364,49 +375,14 @@ module DNSTraverse
       return children
     end
     
-    def process_normal_makequery_with_udpsize(udpsize)
-      @resolver.udp_size = udpsize
-      return @resolver.query(@qname, @qtype)
-    end
-    
-    # XXX dig news.bbc.co.uk @212.58.224.21 - SERVFAIL for 2 mins every 15 mins?
-    def process_normal_makequery_message
-      my_udp_size = @resolver.udp_size
-      message = process_normal_makequery_with_udpsize(my_udp_size)
-      return message if message.is_a? Exception
-      return message if my_udp_size == 512
-      return message if (message.header.rcode != Dnsruby::RCode.FORMERR and
-                         message.header.rcode != Dnsruby::RCode.NOTIMP and
-                         message.header.rcode != Dnsruby::RCode.SERVFAIL)
-      Log.debug { "Possible failure by nameserver to understand EDNS0 - retry" }
-      message_retry = process_normal_makequery_with_udpsize(512)
-      @resolver.udp_size = my_udp_size
-      return message if message_retry.is_a? Exception
-      return message if (message_retry.header.rcode == Dnsruby::RCode.FORMERR or
-                         message_retry.header.rcode == Dnsruby::RCode.NOTIMP or
-                         message_retry.header.rcode == Dnsruby::RCode.SERVFAIL)
-      @warnings.push "#{message.answerfrom} doesn't seem to support EDNS0"
-      return message_retry
-    end
-    
-    def process_normal_makequery(ip)  
-      Log.debug { "Querying #{ip} for #{@qname}/#{@qtype}" }
-      @resolver.nameserver = ip
-      message = process_normal_makequery_message
-      unless message.is_a? Exception then
-        msg_validate(message, :qname => @qname, :qtype => @qtype)
-        @warnings.concat msg_comment(message, :want_recursion => false)
-      end
-      return message
-    end
     
     def make_referral(args)
       raise "Must pass new refid" unless args[:refid]
       refargs = { :qname => @qname, :qclass => @qclass,
         :qtype => @qtype, :nsatype => @nsatype, :infocache => @infocache,
         :referral_resolution => @referral_resolution,
-        :resolver => @resolver, :maxdepth => @maxdepth,
-        :parent => self }.merge(args)
+        :resolver => @resolver, :maxdepth => @maxdepth, :parent => self,
+        :decoded_query_cache => @decoded_query_cache }.merge(args)
       return Referral.new(refargs)
     end
     

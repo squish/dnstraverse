@@ -71,6 +71,7 @@ module DNSTraverse
     end
     
     def get_startservers(domain, nsatype = 'A')
+      Log.debug { "Getting startservers for #{domain}/{#nsatype}" }
       newbailiwick = nil
       # search for best NS records in authority cache based on this domain name
       ns = get_ns?(domain)
