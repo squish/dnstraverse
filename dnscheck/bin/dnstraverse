@@ -181,7 +181,7 @@ if options[:root] then
 else
   begin
    (root, rootip) = dnscheck.get_a_root(:aaaa => options[:root_aaaa])
-  rescue DNSCheck::ResolveError => e
+  rescue DNSTraverse::ResolveError => e
     puts "Failed to find a root: " + e.message
     exit 2
   end
