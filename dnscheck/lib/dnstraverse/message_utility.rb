@@ -1,4 +1,4 @@
-module DNSCheck
+module DNSTraverse
   class ResolveError < RuntimeError
   end
   
@@ -54,7 +54,7 @@ module DNSCheck
       ans = msg.answer.select { |x|
         x.name.to_s.casecmp(qname) == 0 && 
         x.klass.to_s.casecmp(qclass) == 0 &&
-        (any || x.type.to_s.casecmp(qtype) == 0)
+         (any || x.type.to_s.casecmp(qtype) == 0)
       }
       Log.debug { "Answers:" + ans.size.to_s}
       return ans.size > 0 ? ans : nil
@@ -89,24 +89,24 @@ module DNSCheck
       return nil
     end
     
-#    def msg_referrals(msg, args)
-#      r = msg.authority.select { |x|
-#        x.type.to_s.casecmp('NS') == 0 && x.klass.to_s.casecmp('IN') == 0
-#      }
-#      if args[:bailiwick] then
-#        b = args[:bailiwick]
-#        r = r.select { |x|
-#          zonename = x.name.to_s
-#          if cond = zonename !~ /#{@b}$/i then
-#            Log.debug { "Excluding lame referral #{b} to #{zonename}" }
-#            raise "lame"
-#          end
-#          cond
-#        }
-#      end
-#      Log.debug { "Referrals: " + r.map {|x| x.domainname.to_s }.join(", ") }
-#      return r
-#    end
+    #    def msg_referrals(msg, args)
+    #      r = msg.authority.select { |x|
+    #        x.type.to_s.casecmp('NS') == 0 && x.klass.to_s.casecmp('IN') == 0
+    #      }
+    #      if args[:bailiwick] then
+    #        b = args[:bailiwick]
+    #        r = r.select { |x|
+    #          zonename = x.name.to_s
+    #          if cond = zonename !~ /#{@b}$/i then
+    #            Log.debug { "Excluding lame referral #{b} to #{zonename}" }
+    #            raise "lame"
+    #          end
+    #          cond
+    #        }
+    #      end
+    #      Log.debug { "Referrals: " + r.map {|x| x.domainname.to_s }.join(", ") }
+    #      return r
+    #    end
     
     def msg_authority(msg)
       ns = []
@@ -129,13 +129,20 @@ module DNSCheck
     def msg_follow_cnames(msg, args)
       name = args[:qname]
       type = args[:qtype]
+      bw = args[:bailiwick].to_s
+      bwend = ".#{args[:bailiwick]}"
       while true do
         return name if msg_answers?(msg, :qname => name, :qtype => type)
         if not ans = msg_answers?(msg, :qname => name, :qtype => 'CNAME') then
           return name
         end
-        Log.debug { "CNAME encountered from #{name} to #{ans[0].domainname}"}
-        name = ans[0].domainname.to_s
+        target = ans[0].domainname.to_s
+        Log.debug { "CNAME encountered from #{name} to #{target}"}
+        if bw and (target.casecmp(bw) != 0 or name !~ /#{bwend}$/i) then
+          # target outside of bailiwick, don't follow any more CNAMEs.
+          return target
+        end
+        name = target
       end
     end
     

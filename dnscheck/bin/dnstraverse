@@ -174,7 +174,7 @@ args[:loglevel] = options[:debug] >= 1 ? Logger::DEBUG : Logger::UNKNOWN
 args[:libloglevel] = options[:debug] >= 2 ? Logger::DEBUG : Logger::UNKNOWN
 args[:always_tcp] = true if options[:always_tcp]
 args[:allow_tcp] = true if options[:allow_tcp]
-dnscheck = DNSCheck::Traverser.new(args)
+dnscheck = DNSTraverse::Traverser.new(args)
 if options[:root] then
   root = options[:root]
   rootip = root # XXX fix me need to look up IP address if not passed

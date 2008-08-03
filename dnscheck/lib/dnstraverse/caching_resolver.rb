@@ -2,7 +2,7 @@ require 'dnsruby'
 
 require 'dnstraverse/log'
 
-module DNSCheck
+module DNSTraverse
   
   class CachingResolver < Dnsruby::Resolver
     

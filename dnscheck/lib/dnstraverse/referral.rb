@@ -1,11 +1,17 @@
-module DNSCheck
+require 'dnstraverse/response'
+require 'dnstraverse/info_cache'
+
+module DNSTraverse
+  
+  class NoGlueError < RuntimeError
+  end
   
   class Referral
     include MessageUtility
     
     attr_reader :server, :serverips, :qname, :qclass, :qtype, :nsatype
     attr_reader :refid, :message, :infocache, :parent, :bailiwick, :stats
-    attr_reader :warnings, :children
+    attr_reader :warnings, :children, :parent_ip
     
     def txt_ips_verbose
       return '' unless @serverips
@@ -17,7 +23,10 @@ module DNSCheck
     
     def txt_ips
       return '' unless @serverips
-      @serverips.map { |ip| ip =~ /^key:([^:]+(:[^:]*)?)/ ? $1 : ip }.join(',')
+      
+      @serverips.map { |ip|
+        ip =~ /^key:/ ? @stats_resolve[ip][:response].to_s : ip
+      }.join(',')
     end
     
     def to_s
@@ -50,7 +59,7 @@ module DNSCheck
       @qclass = args[:qclass] || :IN
       @qtype = args[:qtype] || :A
       @nsatype = args[:nsatype] || :A
-      @infocache = args[:infocache] || DNSCheck::InfoCache.new
+      @infocache = args[:infocache] || DNSTraverse::InfoCache.new
       @roots = args[:roots]
       @resolves = nil
       @message = nil # our message for this particular referral question
@@ -58,12 +67,11 @@ module DNSCheck
       @server = args[:server] || nil # nil for the root-root server
       @serverips = args[:serverips] || nil
       @responses = Hash.new # responses/exception for each IP in @serverips
-      @responses_infocache = Hash.new # end cache for each IP
-      @responses_bad = Hash.new # out of bailiwick records for each IP
       @children = Hash.new # Array of child Referrer objects keyed by IP
       @bailiwick = args[:bailiwick] || nil
       @secure = args[:secure] || true # ensure bailiwick checks
       @parent = args[:parent] || nil # Parent Referral
+      @parent_ip = args[:parent_ip] || nil # Parent Referral IP if applicable
       @maxdepth = args[:maxdepth] || 10 # maximum depth before error
       @noglue = false # flag to indicate failure due to referral without glue
       @referral_resolution = args[:referral_resolution] || false # flag
@@ -81,29 +89,19 @@ module DNSCheck
       Log.debug { "New resolver object created: " + self.to_s }
     end
     
-    def get_startservers(args)
-      domain = args[:domain]
-      ourinfocache = args[:infocache] || @infocache
-      newbailiwick = nil
-      # search for best NS records in authority cache based on this domain name
-      ns = ourinfocache.get_ns?(domain)
-      starters = Array.new
-      # look up in additional cache corresponding IP addresses if we know them
-      for rr in ns do
-        iprrs = ourinfocache.get?(:qname => rr.domainname, :qtype => @nsatype)
-        ips = iprrs ? iprrs.map {|iprr| iprr.address.to_s } : nil
-        starters.push({ :name => rr.domainname, :ips => ips })
-      end
-      newbailiwick = ns[0].name
-      Log.debug { "For domain #{domain} using start servers: " +
-        starters.map { |x| x[:name] }.join(', ') }
-      return starters, newbailiwick
+    def inside_bailiwick(name)
+      return true if @bailiwick.nil?
+      bwend = ".#{@bailiwick}"
+      namestr = name.to_s
+      return true if namestr.casecmp(@bailiwick) == 0
+      return true if namestr =~ /#{bwend}$/i
+      return false
     end
     
     # resolve server to serverips, return list of Referral objects to process
     def resolve(args)
       raise "This Referral object has already been resolved" if resolved?
-      if @bailiwick and @server.to_s =~ /.#{@bailiwick}$/i then
+      if inside_bailiwick(@server) then
         # foo.net IN NS ns.foo.net - no IP cached & no glue = failure
         Log.debug { "Attempt to resolve #{@server} with a bailiwick referral " +
                     " of #{bailiwick} - no glue record provided" }
@@ -112,7 +110,7 @@ module DNSCheck
       end
       refid = "#{@refid}.0"
       child_refid = 1
-      starters, newbailiwick = get_startservers(:domain => @server)
+      starters, newbailiwick = @infocache.get_startservers(@server)
       Log.debug { "Resolving #{@server} type #{@nsatype} " }
       for starter in starters do
         r = make_referral(:server => starter[:name],
@@ -133,12 +131,13 @@ module DNSCheck
       Log.debug { "Calculating resolution: #{self}" }
       # create stats_resolve containing all the statistics of the resolution
       @stats_resolve = Hash.new
-      if @noglue then # in-bailiwick referral without glue - error
-        outcome = "noglue"
-        key = "key:#{outcome}:#{server}:#{qname}:#{qclass}:#{qtype}".downcase
-        @stats_resolve[key] = { :prob => 1.0, :server => @server,
-          :qname => qname, :qclass => qclass, :qtype => qtype,
-          :outcome => outcome, :referral => self }
+      if @noglue then # in-bailiwick referral without glue
+        e = NoGlueError.new "No glue provided"
+        r = DNSTraverse::Response.new(:message => e, :qname => @server,
+                                      :qclass => @qclass, :qtype => @nsatype,
+                                      :ip => @parent_ip, :bailiwick => @bailiwick)
+        @stats_resolve[r.key] = { :prob => 1.0, :response => r,
+          :referral => self }
       else
         # normal resolve - combine children's statistics in to @stats_resolve
         stats_calculate_children(@stats_resolve, @resolves, 1.0)
@@ -147,9 +146,9 @@ module DNSCheck
       @serverweights = Hash.new
       @stats_resolve.each_pair do |key, data|
         # key = IP or key:blah, data is hash containing :prob, etc.
-        if data[:answers] then # RR records
+        if data[:response].status == :answered then # RR records
           # there were some answers - so add the probabilities in
-          for rr in data[:answers] do
+          for rr in data[:response].answers do
             @serverweights[rr.address.to_s]||= 0
             @serverweights[rr.address.to_s]+= data[:prob]
           end
@@ -191,7 +190,7 @@ module DNSCheck
         return
       end
       for ip in @serverips do
-        serverweight = @serverweights[ip] # fixed at initialize or at resolve
+        serverweight = @serverweights[ip] # set at initialize or at resolve
         if ip =~ /^key:/ then # resolve failed for some reason
           # pull out the statistics on the resolution and copy over
           raise "duplicate key found" if @stats[ip] # assertion
@@ -205,48 +204,12 @@ module DNSCheck
           @stats[ip] = @stats_resolve[ip].dup
           next
         end
-        key = nil
-        # XXX must always have a response surely?
-#        if @responses[ip] then
-          msg = @responses[ip]
-          our_qname = @qname
-          unless msg.is_a? Exception then
-            our_qname = msg_follow_cnames(msg, :qname => our_qname,
-                                          :qtype => @qtype)
-          end
-          ans = exception_msg = nil
-          # check all the immediate (non-referral) conditions
-          q = "#{ip}:#{our_qname}:#{@qclass}:#{@qtype}"
-          if msg.is_a? Exception then
-            outcome = "exception"
-            exception_msg = msg.to_s
-            key = "key:#{outcome}:#{q}:#{exception_msg}".downcase
-          elsif msg.header.rcode != NOERROR then
-            outcome = "error"
-            key = "key:#{outcome}:#{q}:#{msg.header.rcode}".downcase
-          elsif (ans = msg_answers?(msg, :qname => our_qname,
-                                    :qtype => @qtype)) then
-            outcome = "answer"
-            key = "key:#{outcome}:#{q}".downcase
-          elsif msg_nodata?(msg) then
-            outcome = "nodata"
-            key = "key:#{outcome}:#{q}".downcase
-          end
-          # a response that we couldn't parse for valid referrals?
-          if key.nil? and @children[ip].is_a? Exception then
-            outcome = "referral exception"
-            exception_msg = @children[ip].to_s
-            key = "key:#{outcome}:#{q}:#{exception_msg}".downcase
-          end
-#        end
-        if key then
-          # immediate (non-referral) conditions - no children
-          @stats[key] = { :prob => serverweight, :server => @server,
-            :ip => ip, :qname => our_qname, :qclass => @qclass,
-            :qtype => @qtype, :msg => msg, :outcome => outcome, :answers => ans,
-            :exception_msg => exception_msg, :referral => self }
-        else
+        if @children[ip] then
           stats_calculate_children(@stats, @children[ip], serverweight)
+        else
+          response = @responses[ip]
+          @stats[response.key] = { :prob => serverweight,
+            :response => response, :referral => self }
         end
       end
       @stats.each_pair do |key, data|
@@ -290,7 +253,7 @@ module DNSCheck
       Log.debug { "Special case processing, addding roots as referrals" }
       refid_prefix = @refid == '' ? '' : "#{@refid}."
       refid = 1
-      starters = (get_startservers(:domain => ''))[0]
+      starters = (@infocache.get_startservers(''))[0]
       @children[:rootroot] = Array.new # use 'rootroot' instead of IP address
       for root in starters do
         r = make_referral(:server => root[:name], :serverips => root[:ips],
@@ -298,27 +261,6 @@ module DNSCheck
         @children[:rootroot].push r
         refid+= 1
       end
-    end
-    
-    NOERROR = Dnsruby::RCode.NOERROR
-    NXDOMAIN = Dnsruby::RCode.NXDOMAIN
-    
-    # Are we done?  If so, what was the reason?
-    # :exception - there was an exception (timeout)
-    # :error - there was a DNS error (see rcode)
-    # :answered - there was a direct answer
-    # :nodata - there was NODATA (referring to after cname processing)
-    # :additional - answer was gleened from additional processing cache
-    # false - we didn't find the answer with this message, referrals present
-    def done?(msg)
-      qtype = msg.question[0].qtype
-      qname = msg_follow_cnames(msg, :qname => msg.question[0].qname,
-                                :qtype => qtype)
-      return :exception if msg.is_a? Exception
-      return :error if msg.header.rcode != NOERROR
-      return :answered if msg_answers?(msg, :qname => qname, :qtype => qtype)
-      return :nodata if msg_nodata?(msg)
-      return false
     end
     
     def check_loop?(args) # :ip, :qtype, :qname, :qclass
@@ -336,7 +278,6 @@ module DNSCheck
       return nil
     end
     
-    # TODO: create response object encapsulating message, infocache and children?
     def process_normal(args)
       Log.debug { "process " + self.to_s }
       #      if l = check_loop?(:ip => ip, :qname => @qname,
@@ -350,43 +291,25 @@ module DNSCheck
       for ip in @serverips do
         next if ip =~ /^key:/ # resolve failed on something
         if @refid.scan(/\./).length >= @maxdepth.to_i then
-          @responses[ip] = RuntimeError.new "Maxdepth #{@maxdepth} exceeded"
-          next
-        end
-        @responses[ip] = m = process_normal_makequery(ip)
-        next if m.is_a? Exception
-        next if m.header.rcode != NOERROR
-        @responses_infocache[ip] = newinfocache = InfoCache.new(@infocache)
-        good, bad = msg_cacheable(m, @bailiwick, :both)
-        @responses_bad[ip] = bad
-        newinfocache.add(@secure ? good : good + bad)
-        done = done?(m)
-        Log.debug { "Done due to: " + done.to_s } if done
-        next if done
-        name = msg_follow_cnames(m, :qname => @qname, :qtype => @qtype)
-        starters, newbailiwick = get_startservers(:domain => name,
-                                                  :infocache => newinfocache)
-        starternames = starters.map { |x| x[:name].to_s.downcase }
-        #        unknown_starternames = starternames
-        #        for nsrr in (msg_authority(m))[0] do
-        #          if nsrr.name.to_s != newbailiwick.to_s or
-        #            not starternames.include?(nsrr.domainname.to_s.downcase) then
-        #            @warnings.push "Authority '#{nsrr}' not used - lame delegation?"
-        #          end
-        #          unknown_starternames.delete(nsrr.domainname.to_s.downcase)
-        #        end
-        #        for startername in unknown_starternames do
-        #          @warnings.push "Using '#{startername}' which wasn't in authority"
-        #        end
-        #        #raise "Assertion failed for non zero referrals" if refs.size < 1
-        authorities = (msg_authority(m))[0]
-        authoritynames = authorities.map { |rr| rr.domainname.to_s.downcase }
-        if starternames.sort == authoritynames.sort then
-          @children[ip] = make_referrals(:starters => starters, :qname => name,
-                                         :bailiwick => newbailiwick,
-                                         :infocache => newinfocache)
+          m = RuntimeError.new "Maxdepth #{@maxdepth} exceeded"
         else
-          @children[ip] = RuntimeError.new "Improper or lame delegation"
+          m = process_normal_makequery(ip) # could also be an exception
+        end
+        r = DNSTraverse::Response.new(:message => m, :qname => @qname,
+                                      :qclass => @qclass, :qtype => @qtype,
+                                      :bailiwick => @bailiwick,
+                                      :infocache => @infocache, :ip => ip)
+        @responses[ip] = r
+        case r.status
+          when :restart, :referral then
+          @children[ip] = make_referrals(:qname => r.endname,
+                                         :starters => r.starters,
+                                         :bailiwick => r.starters_bailiwick,
+                                         :infocache => r.infocache,
+                                         :parent_ip => ip)
+          # XXX shouldn't be any children unless referrals
+          #when :referral_lame then
+          #@children[ip] = RuntimeError.new "Improper or lame delegation"
         end
       end
     end
@@ -461,36 +384,36 @@ module DNSCheck
         puts if spacing and not first
         first = false
         printf "#{prefix}%5.1f%%: ", data[:prob] * 100
-        if key =~ /^key:(referral )?exception:/ then
-          puts "Caused exception at #{data[:server]} (#{data[:ip]})"
-          puts "#{indent}#{data[:exception_msg]}"
-        elsif key =~ /^key:error:/ then
-          if data[:msg].header.rcode == Dnsruby::RCode::NXDOMAIN then
-            puts "NXDOMAIN (no such domain) at #{data[:server]} (#{data[:ip]})"
+        response = data[:response]
+        referral = data[:referral]
+        where = "#{referral.server} (#{response.ip})"
+        case response.status
+          when :exception
+          if response.message.is_a? NoGlueError then
+            puts "No glue at #{referral.parent.server} " + 
+            "(#{referral.parent_ip}) for #{referral.server}"
           else
-            puts "#{data[:msg].header.rcode} at #{data[:server]} (#{data[:ip]})"
+            puts "#{response.exception_message} at #{where}"
           end
-        elsif key =~ /^key:nodata:/ then
-          puts "NODATA (for this type) at #{data[:server]} (#{data[:ip]})"
-        elsif key =~ /^key:noglue:/ then
-          parent = data[:referral].parent
-          puts "No glue for #{data[:server]}"
+          when :error
+          puts "#{response.error_message} at #{where}"
+          when :nodata
+          puts "NODATA (for this type) at #{where})"
+          when :answered
+          puts "Answer from #{where}"
           if results then
-            puts "#{indent}Question: " +
-            "#{data[:qname]}/#{data[:qclass]}/#{data[:qtype]}"
-            puts "#{indent}Referral: #{parent.server} to " +
-            "#{data[:server]} for #{data[:referral].bailiwick}"
-          end
-        elsif key =~ /^key:answer:/ then
-          puts "Answer from #{data[:server]} (#{data[:ip]})"
-          if results then
-            for rr in data[:answers] do
+            for rr in data[:response].answers do
               puts "#{indent}#{rr}"
             end
           end
         else
-          puts "Stopped at #{data[:server]} (#{data[:ip]})"
+          puts "Stopped at #{where})"
           puts "#{indent}#{key}"
+        end
+        if (response.qname != @qname) or (response.qclass != @qclass) or
+         (response.qtype != @qtype) then
+          puts "#{indent}While querying #{response.qname}/" +
+          "#{response.qclass}/#{response.qtype}"
         end
       end
     end

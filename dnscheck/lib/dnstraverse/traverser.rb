@@ -6,7 +6,7 @@ require 'dnstraverse/message_utility'
 require 'dnstraverse/caching_resolver'
 require 'dnstraverse/referral'
 
-module DNSCheck
+module DNSTraverse
   
   class Traverser
     include MessageUtility

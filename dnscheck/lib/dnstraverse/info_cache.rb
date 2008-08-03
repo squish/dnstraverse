@@ -1,6 +1,6 @@
 require 'dnstraverse/log'
 
-module DNSCheck
+module DNSTraverse
   class InfoCache
     
     attr_reader :data # hash (string keys, see key() )
@@ -69,5 +69,23 @@ module DNSCheck
         domain = (i = domain.index('.')) ? domain[i+1..-1] : ''
       end
     end
+    
+    def get_startservers(domain, nsatype = 'A')
+      newbailiwick = nil
+      # search for best NS records in authority cache based on this domain name
+      ns = get_ns?(domain)
+      starters = Array.new
+      # look up in additional cache corresponding IP addresses if we know them
+      for rr in ns do
+        iprrs = get?(:qname => rr.domainname, :qtype => nsatype)
+        ips = iprrs ? iprrs.map {|iprr| iprr.address.to_s } : nil
+        starters.push({ :name => rr.domainname, :ips => ips })
+      end
+      newbailiwick = ns[0].name.to_s
+      Log.debug { "For domain #{domain} using start servers: " +
+        starters.map { |x| x[:name] }.join(', ') }
+      return starters, newbailiwick
+    end
+
   end
 end
