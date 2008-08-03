@@ -178,7 +178,7 @@ module DNSTraverse
                                       :qclass => @qclass, :qtype => @nsatype,
                                       :ip => @parent_ip, :bailiwick => @bailiwick,
                                       :decoded_query_cache => @decoded_query_cache)
-        @stats_resolve[r.key] = { :prob => 1.0, :response => r,
+        @stats_resolve[r.stats_key] = { :prob => 1.0, :response => r,
           :referral => self }
       else
         # normal resolve - combine children's statistics in to @stats_resolve
@@ -422,8 +422,9 @@ module DNSTraverse
           puts "Stopped at #{where})"
           puts "#{indent}#{key}"
         end
-        if (response.qname != @qname) or (response.qclass != @qclass) or
-         (response.qtype != @qtype) then
+        if response.status != :answered and
+         ((response.qname != @qname) or (response.qclass != @qclass) or
+         (response.qtype != @qtype)) then
           puts "#{indent}While querying #{response.qname}/" +
           "#{response.qclass}/#{response.qtype}"
         end

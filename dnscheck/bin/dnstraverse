@@ -212,7 +212,6 @@ begin
   end
   puts "Results:"
   result.stats_display(:results => true, :spacing => true)
-  puts UDPSocket.do_not_reverse_lookup
 rescue Interrupt => e
   puts "Interrupted by user"
 end
