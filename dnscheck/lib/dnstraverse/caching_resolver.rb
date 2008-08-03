@@ -27,16 +27,22 @@ module DNSTraverse
         @cache_hits+= 1
         return @cache[key]
       end
-      msg = Dnsruby::Message.new
-      msg.add_question(name, type, klass)
-      q = Queue.new
-      send_async(msg, q)
-      id, result, error = q.pop
-      @cache[key] = result || error
+      answer = nil
+      begin
+        msg = Dnsruby::Message.new
+        msg.add_question(name, type, klass)
+        q = Queue.new
+        send_async(msg, q)
+        id, result, error = q.pop
+        answer = result || error
+      rescue Exception => e
+        answer = RuntimeError.new "Dnsruby failure: " + e.to_s
+      end  
+      @cache[key] = answer
       Log.debug { "Cache store: #{key}" }
       @cache[key]
     end
     
   end
-
+  
 end
