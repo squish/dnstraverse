@@ -3,7 +3,7 @@ require 'dnstraverse/log'
 module DNSTraverse
   class InfoCache
     
-    attr_reader :data # hash (string keys, see key() )
+    attr_reader :parent
     
     private
     
@@ -12,13 +12,10 @@ module DNSTraverse
     end
     
     public
-    
-    def initialize(initobj = nil)
-      if initobj.is_a? InfoCache then
-        @data = initobj.data.dup
-      else
-        @data = Hash.new
-      end
+
+    def initialize(parent = nil)
+      @parent = parent
+      @data = Hash.new
       self
     end
     
@@ -52,9 +49,12 @@ module DNSTraverse
     def get?(args)
       qclass = args[:qclass] || 'IN'
       gkey = "#{args[:qname]}:#{qclass}:#{args[:qtype]}".downcase
-      return nil unless @data.has_key?(gkey)
-      Log.debug { "Infocache recall: " + @data[gkey].join(', ')}
-      return @data[gkey] # returns Array
+      if @data.has_key?(gkey) then
+        Log.debug { "Infocache recall: " + @data[gkey].join(', ')}
+        return @data[gkey] # returns Array
+      end
+      return nil unless parent
+      return parent.get?(args)
     end
     
     def get_ns?(domain) # get an appropriate ns based on domain
@@ -78,9 +78,10 @@ module DNSTraverse
       starters = Array.new
       # look up in additional cache corresponding IP addresses if we know them
       for rr in ns do
-        iprrs = get?(:qname => rr.domainname, :qtype => nsatype)
+        nameserver = rr.domainname.to_s
+        iprrs = get?(:qname => nameserver, :qtype => nsatype)
         ips = iprrs ? iprrs.map {|iprr| iprr.address.to_s } : nil
-        starters.push({ :name => rr.domainname, :ips => ips })
+        starters.push({ :name => nameserver, :ips => ips })
       end
       newbailiwick = ns[0].name.to_s
       Log.debug { "For domain #{domain} using start servers: " +

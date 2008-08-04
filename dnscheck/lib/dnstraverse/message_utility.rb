@@ -138,7 +138,7 @@ module DNSTraverse
         end
         target = ans[0].domainname.to_s
         Log.debug { "CNAME encountered from #{name} to #{target}"}
-        if bw and (target.casecmp(bw) != 0 or name !~ /#{bwend}$/i) then
+        if bw and (target.casecmp(bw) != 0 and name !~ /#{bwend}$/i) then
           # target outside of bailiwick, don't follow any more CNAMEs.
           return target
         end

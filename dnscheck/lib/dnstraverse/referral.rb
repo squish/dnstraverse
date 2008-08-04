@@ -107,28 +107,31 @@ module DNSTraverse
     end
     
     # clean up the workings
-    def cleanup
-      @infocache = nil
-      @cacheable_good = @cacheable_bad = nil
-      @starters = @starters_bailiwick = nil
-      @auth_ns = @auth_soa = @auth_other = nil
+    def cleanup(args = nil)
+      @infocache = nil if args.nil? or args[:infocache]
+      @cacheable_good = @cacheable_bad = nil if args.nil? or args[:cacheable]
+      @starters = @starters_bailiwick = nil if args.nil? or args[:starters]
+      @auth_ns = @auth_soa = @auth_other = nil if args.nil? or args[:auth]
       @responses.each_pair do |ip, response|
         # Clean up our response
         response.cleanup
       end
+      @children = nil if args.nil? or args[:children]
+      @resolves = nil if args.nil? or args[:resolves]
+      @responses = nil if args.nil? or args[:responses]
     end
     
     # Clean ourselves and all children objects
-    def cleanup_all
+    def cleanup_all(args = nil)
       # Clean up referral objects from resolve phase
       @resolves.each do |child|
-        child.cleanup_all
+        child.cleanup_all(args)
       end
       # Clean up our child referral objects from main phase
       @children.each_pair do |ip, child|
-        child.cleanup_all
+        child.cleanup_all(args)
       end
-      cleanup
+      cleanup(args)
     end
     
     def inside_bailiwick?(name)
@@ -374,7 +377,6 @@ module DNSTraverse
       end
       return children
     end
-    
     
     def make_referral(args)
       raise "Must pass new refid" unless args[:refid]

@@ -212,6 +212,34 @@ begin
   end
   puts "Results:"
   result.stats_display(:results => true, :spacing => true)
+  raise Interrupt
 rescue Interrupt => e
   puts "Interrupted by user"
+  GC.start
+  s = Hash.new
+  ObjectSpace.each_object do |o|
+    s[o.class]||= 0
+    s[o.class]= s[o.class] + 1
+  end
+  s.sort {|a,b| a[1] <=> b[1]}.each do | c |
+    puts "#{c[1]} #{c[0]}"
+  end
+  f = File.open("strings.dump", "w")
+  ObjectSpace.each_object do |o|
+    if o.instance_of? String then
+      f.puts o
+    end
+  end
+  f = File.open("hashes.dump", "w")
+  ObjectSpace.each_object do |o|
+    if o.instance_of? Hash then
+      f.puts o.size.to_s
+    end
+  end
+  f = File.open("label.dump", "w")
+  ObjectSpace.each_object do |o|
+    if o.instance_of? Dnsruby::Name::Label then
+      f.puts o.to_s
+    end
+  end
 end
