@@ -1,6 +1,6 @@
-#Mon Jul 21 22:17:19 BST 2008
+#Tue Aug 05 21:46:53 BST 2008
 WARNING=DO NOT MODIFY THIS FILE IF YOU DON'T UNDERSTAND
-defaultDestination=W\:/dnscheck-sync
+defaultDestination=W\:/dnstraverse-sync
 defaultVariables=
 eclipse.preferences.version=1
 map|0=/|,|,|,|,
