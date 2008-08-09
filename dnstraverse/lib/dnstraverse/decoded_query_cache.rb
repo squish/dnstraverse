@@ -20,7 +20,7 @@ module DNSTraverse
       qtype = args[:qtype] || raise("Must pass qtype")
       ip = args[:ip] || raise("Must pass ip")
       bailiwick = args[:bailiwick] # could be nil
-      key = "#{ip}:#{qname}:#{qclass}:#{qtype}:#{bailiwick}"
+      key = "key:dqc:#{ip}:#{qname}:#{qclass}:#{qtype}:#{bailiwick}"
       Log.debug { "Decoded Query Cache query #{key}" }
       if @cache.has_key?(key) then
         Log.debug { "Decoded Query Cache hit: #{key}" }

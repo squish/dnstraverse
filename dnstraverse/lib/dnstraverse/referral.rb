@@ -1,4 +1,5 @@
 require 'dnstraverse/response'
+require 'dnstraverse/response_noglue'
 require 'dnstraverse/info_cache'
 require 'dnstraverse/decoded_query_cache'
 
@@ -81,6 +82,7 @@ module DNSTraverse
       @stats_resolve = nil # will contain statistics for our resolve (if applic)
       @serverweights = Hash.new # key is IP
       @warnings = Array.new # warnings will be placed here
+      @processed = false # flag for processed? method
       raise "Must pass Resolver" unless @resolver
       @infocache.add_hints('', args[:roots]) if args[:roots] # add root hints
       unless @decoded_query_cache then
@@ -108,30 +110,16 @@ module DNSTraverse
     
     # clean up the workings
     def cleanup(args = nil)
-      @infocache = nil if args.nil? or args[:infocache]
-      @cacheable_good = @cacheable_bad = nil if args.nil? or args[:cacheable]
-      @starters = @starters_bailiwick = nil if args.nil? or args[:starters]
-      @auth_ns = @auth_soa = @auth_other = nil if args.nil? or args[:auth]
-      @responses.each_pair do |ip, response|
-        # Clean up our response
-        response.cleanup
-      end
-      @children = nil if args.nil? or args[:children]
-      @resolves = nil if args.nil? or args[:resolves]
-      @responses = nil if args.nil? or args[:responses]
-    end
-    
-    # Clean ourselves and all children objects
-    def cleanup_all(args = nil)
-      # Clean up referral objects from resolve phase
-      @resolves.each do |child|
-        child.cleanup_all(args)
-      end
-      # Clean up our child referral objects from main phase
-      @children.each_pair do |ip, child|
-        child.cleanup_all(args)
-      end
-      cleanup(args)
+      Log.debug { "cleaning: #{self}" }
+      @infocache = nil unless args and args[:infocache]
+      @cacheable_good = @cacheable_bad = nil unless args and args[:cacheable]
+      @starters = @starters_bailiwick = nil unless args and args[:starters]
+      @auth_ns = @auth_soa = @auth_other = nil unless args and args[:auth]
+      @children = nil unless args and args[:children]
+      @resolves = nil unless args and args[:resolves]
+      @responses = nil unless args and args[:responses]
+      @decoded_query_cache = nil unless args and args[:decoded_query_cache]
+      @resolver = nil unless args and args[:resolver]
     end
     
     def inside_bailiwick?(name)
@@ -177,10 +165,18 @@ module DNSTraverse
       @stats_resolve = Hash.new
       if @noglue then # in-bailiwick referral without glue
         e = NoGlueError.new "No glue provided"
-        r = DNSTraverse::Response.new(:message => e, :qname => @server,
-                                      :qclass => @qclass, :qtype => @nsatype,
-                                      :ip => @parent_ip, :bailiwick => @bailiwick,
-                                      :decoded_query_cache => @decoded_query_cache)
+        #r = DNSTraverse::Response.new(:message => e, :qname => @server,
+        #                              :qclass => @qclass, :qtype => @nsatype,
+        #                              :ip => @parent_ip, :bailiwick => @bailiwick,
+        #                              :decoded_query_cache => @decoded_query_cache)
+        #@stats_resolve[r.stats_key] = { :prob => 1.0, :response => r,
+        #  :referral => self }
+        r = DNSTraverse::Response::NoGlue.new(:qname => @qname,
+                                              :qclass => @qclass,
+                                              :qtype => @qtype,
+                                              :server => @server,
+                                              :ip => @parent_ip,
+                                              :bailiwick => @bailiwick)
         @stats_resolve[r.stats_key] = { :prob => 1.0, :response => r,
           :referral => self }
       else
@@ -240,9 +236,9 @@ module DNSTraverse
           # pull out the statistics on the resolution and copy over
           raise "duplicate key found" if @stats[ip] # assertion
           if @stats_resolve[ip][:prob] != serverweight then # assertion
-            puts "#{@stats_resolve[ip][:prob]} vs #{serverweight}"
+            $stderr.puts "#{@stats_resolve[ip][:prob]} vs #{serverweight}"
             @stats_resolve[ip].each_pair do |a,b|
-              puts a
+              $stderr.puts a
             end
             raise "unexpected probability" 
           end
@@ -263,7 +259,7 @@ module DNSTraverse
     end
     
     def processed?
-      @children.size > 0 ? true : false
+      return @processed
     end
     
     def resolved?
@@ -291,6 +287,7 @@ module DNSTraverse
       end
       # return a set of Referral objects that need to be processed
       # XXX flatten really necessary?
+      @processed = true
       return @children.values.flatten.select {|x| x.is_a? Referral}
     end
     
@@ -298,7 +295,7 @@ module DNSTraverse
       Log.debug { "Special case processing, addding roots as referrals" }
       refid_prefix = @refid == '' ? '' : "#{@refid}."
       refid = 1
-      starters = (@infocache.get_startservers(''))[0]
+      starters = (@infocache.get_startservers('', @nsatype))[0]
       @children[:rootroot] = Array.new # use 'rootroot' instead of IP address
       for root in starters do
         r = make_referral(:server => root[:name], :serverips => root[:ips],
@@ -369,7 +366,9 @@ module DNSTraverse
       children = Array.new
       child_refid = 1
       for starter in starters do
-        refargs = { :server => starter[:name], :serverips => starter[:ips],
+        refargs = {
+          :server => starter[:name],
+          :serverips => starter[:ips],
           :refid => "#{refid}.#{child_refid}"
         }.merge(args)
         children.push make_referral(refargs)
@@ -388,13 +387,20 @@ module DNSTraverse
       return Referral.new(refargs)
     end
     
+    def replace_child(before, after)
+      @children.each_key do | ip |
+        @children[ip].map! { |c| c.equal?(before) ? after : c }
+      end
+    end
+    
     def stats_display(args)
       spacing = args[:spacing] || false
       results = args[:results] || true
       prefix = args[:prefix] || ''
       indent = args[:indent] || "#{prefix}            "
       first = true
-      @stats.each_pair do |key, data|
+      @stats.keys.sort!.each do | key |
+        data = @stats[key]
         puts if spacing and not first
         first = false
         printf "#{prefix}%5.1f%%: ", data[:prob] * 100
@@ -403,12 +409,10 @@ module DNSTraverse
         where = "#{referral.server} (#{response.ip})"
         case response.status
           when :exception
-          if response.message.is_a? NoGlueError then
-            puts "No glue at #{referral.parent.server} " + 
-            "(#{referral.parent_ip}) for #{referral.server}"
-          else
-            puts "#{response.exception_message} at #{where}"
-          end
+          puts "#{response.exception_message} at #{where}"
+          when :noglue
+          puts "No glue at #{referral.parent.server} " + 
+            "(#{response.ip}) for #{response.server}"
           when :error
           puts "#{response.error_message} at #{where}"
           when :nodata

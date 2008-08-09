@@ -6,8 +6,6 @@ module DNSTraverse
   # get a response to a query (or pass in the response if you already have one)
   # creates lots of stats and info, caching as much as possible
   class Response
-    include MessageUtility
-    
     attr_reader :decoded_query
     attr_reader :infocache
     attr_reader :status # our status, expanding on DecodedQuery status

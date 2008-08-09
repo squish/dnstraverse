@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<loadpath>
+	<pathentry path="" type="src"/>
+	<pathentry path="GEM_LIB/dnsruby-1.1/lib" type="var"/>
+	<pathentry path="GEM_LIB/dnsruby-1.1/lib" type="var"/>
+	<pathentry path="GEM_LIB/dnsruby-1.1/lib" type="var"/>
+	<pathentry path="GEM_LIB/dnsruby-1.1/lib" type="var"/>
+	<pathentry path="GEM_LIB/dnsruby-1.1/lib" type="var"/>
+	<pathentry path="GEM_LIB/dnsruby-1.1/lib" type="var"/>
+	<pathentry path="GEM_LIB/dnsruby-1.1/lib" type="var"/>
+	<pathentry path="GEM_LIB/dnsruby-1.1/lib" type="var"/>
+	<pathentry path="GEM_LIB/dnsruby-1.1/lib" type="var"/>
+	<pathentry path="GEM_LIB/dnsruby-1.1/lib" type="var"/>
+	<pathentry path="GEM_LIB/dnsruby-1.1/lib" type="var"/>
+	<pathentry path="GEM_LIB/dnsruby-1.1/lib" type="var"/>
+	<pathentry path="GEM_LIB/dnsruby-1.1/lib" type="var"/>
+	<pathentry path="GEM_LIB/dnsruby-1.1/lib" type="var"/>
+	<pathentry path="GEM_LIB/dnsruby-1.1/lib" type="var"/>
+	<pathentry path="GEM_LIB/dnsruby-1.1/lib" type="var"/>
+	<pathentry path="GEM_LIB/dnsruby-1.1/lib" type="var"/>
+	<pathentry path="GEM_LIB/dnsruby-1.1/lib" type="var"/>
+	<pathentry path="GEM_LIB/dnsruby-1.1/lib" type="var"/>
+	<pathentry path="GEM_LIB/dnsruby-1.1/lib" type="var"/>
+	<pathentry path="GEM_LIB/dnsruby-1.1/lib" type="var"/>
+	<pathentry path="GEM_LIB/dnsruby-1.1/lib" type="var"/>
+	<pathentry path="GEM_LIB/dnsruby-1.1/lib" type="var"/>
+	<pathentry path="GEM_LIB/dnsruby-1.1/lib" type="var"/>
+	<pathentry path="GEM_LIB/dnsruby-1.1/lib" type="var"/>
+	<pathentry path="GEM_LIB/dnsruby-1.1/lib" type="var"/>
+	<pathentry path="GEM_LIB/dnsruby-1.1/lib" type="var"/>
+	<pathentry path="GEM_LIB/dnsruby-1.1/lib" type="var"/>
+	<pathentry path="GEM_LIB/dnsruby-1.1/lib" type="var"/>
+	<pathentry path="GEM_LIB/dnsruby-1.1/lib" type="var"/>
+	<pathentry path="GEM_LIB/dnsruby-1.1/lib" type="var"/>
+	<pathentry path="GEM_LIB/dnsruby-1.1/lib" type="var"/>
+</loadpath>

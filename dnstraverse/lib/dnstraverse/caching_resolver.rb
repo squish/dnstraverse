@@ -21,7 +21,7 @@ module DNSTraverse
       udp_size = self.udp_size
       self.udp_size = udp_size # workaround for bug in dnsruby
       Log.debug { "Querying #{name} to #{ip} class #{klass} type #{type}"}
-      key = "#{ip}:#{name}:#{klass}:#{type}:#{udp_size}"
+      key = "key:res:#{ip}:#{name}:#{klass}:#{type}:#{udp_size}"
       if @cache.has_key?(key) then
         Log.debug { "Cache hit: #{key}" }
         @cache_hits+= 1

@@ -1,5 +1,5 @@
+gem 'dnsruby', '>1.16'
 require 'dnsruby'
-require 'Dnsruby/TheLog'
 require 'dnstraverse/info_cache'
 require 'dnstraverse/log'
 require 'dnstraverse/message_utility'
@@ -8,6 +8,9 @@ require 'dnstraverse/referral'
 require 'socket'
 
 module DNSTraverse
+  
+  TYPE_ARRAY_AAAA = ['AAAA', 'A'].freeze
+  TYPE_ARRAY_A = ['A'].freeze
   
   class Traverser
     include MessageUtility
@@ -19,11 +22,13 @@ module DNSTraverse
       Socket.do_not_reverse_lookup = true
       Log.level = args[:loglevel] if args[:loglevel]
       Log.debug { "Initialize with args: " + args.inspect }
-      Dnsruby::TheLog.level = args[:libloglevel] if args[:libloglevel]
+      Dnsruby.log.level = args[:libloglevel] if args[:libloglevel]
       @state = args[:state] || nil
       @maxdepth = args[:maxdepth] || 10
       @progress_main = args[:progress_main] || method(:progress_null)
       @progress_resolve = args[:progress_resolve] || method(:progress_null)
+      @fast = args[:fast] || false # use fast algorithm, less accurate
+      @answered = @fast ? Hash.new : nil # for fast algorithm
       retries = args[:retries] || 2
       retry_delay = args[:retry_delay] || 2
       dnssec = args[:dnssec] || false
@@ -67,12 +72,10 @@ module DNSTraverse
       end
       roots = ans1.map {|x| x.domainname.to_s }
       Log.debug { "Local resolver lists: " + roots.join(', ') }
-      types = aaaa ? ['AAAA'] : []
-      types.push 'A'
+      types = aaaa ? TYPE_ARRAY_AAAA : TYPE_ARRAY_A
       # loop through all root nameservers to get an appropriate address
-      for root in roots do
-        # lets check additional section first
-        for type in types do
+      for type in types do
+        for root in roots do
           if (add = msg_additional?(msg, :qname => root, :qtype => type)) then
             rootip = add[0].rdata.to_s
             return root, rootip
@@ -80,8 +83,8 @@ module DNSTraverse
         end
       end
       Log.debug { "Nothing in additional section of help" }
-      for root in roots do
-        for type in types do
+      for type in types do
+        for root in roots do
           Log.debug { "Resolving root #{root} type #{type}" }
           msg = @lresolver.query(root, type)
           msg_validate(msg, :qname => root, :qtype => type)
@@ -94,14 +97,13 @@ module DNSTraverse
           end
           Log.debug { "#{root}/#{type}: No suitable answers found" }
         end
-        # there was no appropriate answer for this root
       end
       raise ResolveError, "No address could be found for any root server"
     end
     
-    def run(r, args)
+    def run(r, args = {})
       Log.debug { "run entry, initialising stack to: " + r.to_s }
-      cleanup = args[:cleanup].nil? ? true : args[:cleanup]
+      cleanup = args[:cleanup]
       stack = Array.new
       stack << r
       while stack.size > 0 do
@@ -115,7 +117,7 @@ module DNSTraverse
           end
           output
         }
-        raise "bad stack" if stack.size > 100
+        raise "bad stack" if stack.size > 1000
         r = stack.pop
         Log.debug { "running on stack entry #{r}" }
         case r
@@ -133,9 +135,11 @@ module DNSTraverse
           refres = r.referral_resolution?
           p = (refres == true ? @progress_resolve : @progress_main)
           p.call(:state => @state, :referral => r, :stage => :answer)
-          Log.debug { "cleanup" }
-          r.cleanup if cleanup
-          Log.debug { "cleanup end" }
+          r.cleanup(cleanup)
+          if @fast then
+            key = "#{r.qname}:#{r.qclass}:#{r.qtype}:#{r.server}"
+            @answered[key] = r
+          end
           next
         else
           refres = r.referral_resolution?
@@ -151,29 +155,30 @@ module DNSTraverse
         unless r.processed? then
           # get Referral objects, place on stack with placeholder
           stack << r << :calc_answer
-          stack.push(*r.process({}).reverse)
+          children = r.process({})
+          if @fast then
+            Log.debug { "Checking #{r} for already completed children" }
+            newchildren = []
+            for c in children do
+              key = "#{c.qname}:#{c.qclass}:#{c.qtype}:#{c.server}"
+              if @answered.key?(key)
+                Log.debug { "Fast method - completed #{c}" }
+                r.replace_child(c, @answered[key])
+                refres = r.referral_resolution?
+                p = (refres == true ? @progress_resolve : @progress_main)
+                p.call(:state => @state, :referral => c, :stage => :answer_fast)
+              else
+                newchildren << c
+              end
+            end
+            children = newchildren
+          end
+          stack.push(*children.reverse)
           next
-        end
-        if stack.size == 0 then
-          puts "All done!!!"
         end
         raise "Fatal stack error at #{r} - size still #{stack.size}"
       end
     end
-    
-    #    def find_all_roots(args)
-    #      root = args[:root] || 'localhost'
-    #      rootip = args[:rootip] || '127.0.0.1'
-    #      aaaa = args[:aaaa] || false
-    #      Log.debug { "find_roots entry #{root}" }
-    #      # use our initial root to find all the roots
-    #      r = Referral.new(:refid => '0', :server => nil,
-    #      :qname => '', :qtype => 'NS', :nsatype => aaaa ? 'AAAA' : 'A',
-    #      :roots => [ { :name => root, :ips => [rootip] } ],
-    #      :resolver => @resolver)
-    #      run(r)
-    #      Log.debug { "find_roots exit" }
-    #    end
     
     # asks the :root/:rootip server for all the roots, fills in any missing
     # IP addresses from local resolver
@@ -181,29 +186,44 @@ module DNSTraverse
       root = args[:root] || 'localhost'
       rootip = args[:rootip] || '127.0.0.1'
       aaaa = args[:aaaa] || false
-      qtype = aaaa ? 'AAAA' : 'A'
+      types = aaaa ? TYPE_ARRAY_AAAA : TYPE_ARRAY_A
       Log.debug { "find_roots entry #{root}" }
       @resolver.nameserver = rootip
+      # query for all the root nameservers
       msg = @resolver.query('', 'NS')
+      raise msg if msg.is_a? Exception
       msg_validate(msg, :qname => '', :qtype => 'NS')
       msg_comment(msg, :want_recursion => false)
       ns = msg_answers?(msg, :qname => '', :qtype => 'NS')
       return nil unless ns
       roots = Array.new
+      # look at each root in turn
       for rr in ns do
-        iprrs = msg_additional?(msg, :qname => rr.domainname, :qtype => qtype)
-        ips = iprrs ? iprrs.map {|iprr| iprr.address.to_s } : nil
-        unless ips then
-          Log.debug { "Locally resolving root #{rr.domainname} type #{qtype}" }
-          msg = @lresolver.query(rr.domainname, qtype)
-          msg_validate(msg, :qname => rr.domainname, :qtype => qtype)
-          msg_comment(msg, :want_recursion => true)
-          ans = msg_answers?(msg, :qname => rr.domainname, :qtype => qtype)
-          unless ans then
-            Log.warn { "Failed to resolve #{rr.domainname} type #{qtype}" }
-            next
+        ips = []
+        # find IP addresses in the additional section
+        for type in types do
+          iprrs = msg_additional?(msg, :qname => rr.domainname, :qtype => type)
+          if iprrs then
+            ips.concat iprrs.map {|iprr| iprr.address.to_s }
           end
-          ips = ans.map { |x| x.address.to_s }
+        end
+        # if none, query for the IP addresses
+        unless ips then
+          Log.debug { "Locally resolving root #{rr.domainname}" }
+          for type in types do
+            msg = @lresolver.query(rr.domainname, type)
+            msg_validate(msg, :qname => rr.domainname, :qtype => type)
+            msg_comment(msg, :want_recursion => true)
+            iprrs = msg_answers?(msg, :qname => rr.domainname, :qtype => type)
+            if iprrs then
+              ips.concat iprrs.map {|iprr| iprr.address.to_s }
+            end
+          end
+        end
+        # if we still don't have any IP address, skip this root
+        unless ips.size > 0 then
+          Log.warn { "Failed to resolve #{rr.domainname} type #{qtype}" }
+          next
         end
         roots.push({ :name => rr.domainname, :ips => ips })
       end
@@ -215,7 +235,7 @@ module DNSTraverse
       qname = args[:qname]
       qtype = args[:qtype] || 'A'
       maxdepth = args[:maxdepth] || 10
-      cleanup = args[:cleanup].nil? ? true : args[:cleanup]
+      cleanup = args[:cleanup]
       Log.debug { "run_query entry qname=#{qname} qtype=#{qtype}" }
       r = Referral.new(:qname => qname, :qtype => qtype, :roots => args[:roots],
                        :maxdepth => maxdepth, :resolver => @resolver,
@@ -223,10 +243,6 @@ module DNSTraverse
       run(r, :cleanup => cleanup)
       Log.debug { "run_query exit" }
       return r
-    end
-    
-    def cache_stats
-      return @resolver.requests, @resolver.cache_hits
     end
     
   end

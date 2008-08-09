@@ -16,6 +16,9 @@ module DNSTraverse
           warnings.push "#{msg.answerfrom} allows recursion"
         end
       end
+      if msg.header.tc then
+        warnings.push "#{msg.answerfrom} sent truncated packet"
+      end
       for warn in warnings do
         Log.warn { warn }
       end
