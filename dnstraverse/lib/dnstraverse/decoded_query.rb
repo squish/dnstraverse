@@ -122,12 +122,8 @@ module DNSTraverse
     end
     
     def process_exception
-      if @message.is_a? NoGlueError then
-        @status = :noglue
-      else
-        @status = :exception
-        @exception_message = @message.to_s
-      end
+      @status = :exception
+      @exception_message = @message.to_s
     end
     
     def process_restart
@@ -174,8 +170,6 @@ module DNSTraverse
         return "Error: #{@error_message}"
         when :exception
         return "Exception: #{@exception_message}"
-        when :noglue
-        return "No glue"
         when :nodata
         return "No data"
         when :answered

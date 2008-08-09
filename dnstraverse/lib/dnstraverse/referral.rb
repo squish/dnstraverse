@@ -5,9 +5,6 @@ require 'dnstraverse/decoded_query_cache'
 
 module DNSTraverse
   
-  class NoGlueError < RuntimeError
-  end
-  
   class Referral
     include MessageUtility
     
@@ -15,6 +12,8 @@ module DNSTraverse
     attr_reader :refid, :message, :infocache, :parent, :bailiwick, :stats
     attr_reader :warnings, :children, :parent_ip
     attr_reader :decoded_query_cache
+    
+    EMPTY_ARRAY = [].freeze
     
     def txt_ips_verbose
       return '' unless @serverips
@@ -26,10 +25,19 @@ module DNSTraverse
     
     def txt_ips
       return '' unless @serverips
-      
       @serverips.map { |ip|
         ip =~ /^key:/ ? @stats_resolve[ip][:response].to_s : ip
       }.join(',')
+    end
+    
+    # ips_as_array will return any IP addresses we know for this referral server
+    def ips_as_array
+      return EMPTY_ARRAY unless @serverips
+      my_ips = []
+      for ip in @serverips do
+        my_ips << ip unless ip =~ /^key:/
+      end
+      return my_ips
     end
     
     def to_s
@@ -76,7 +84,6 @@ module DNSTraverse
       @parent_ip = args[:parent_ip] || nil # Parent Referral IP if applicable
       @maxdepth = args[:maxdepth] || 10 # maximum depth before error
       @decoded_query_cache = args[:decoded_query_cache]
-      @noglue = false # flag to indicate failure due to referral without glue
       @referral_resolution = args[:referral_resolution] || false # flag
       @stats = nil # will contain statistics for answers
       @stats_resolve = nil # will contain statistics for our resolve (if applic)
@@ -131,14 +138,19 @@ module DNSTraverse
       return false
     end
     
+    def noglue?
+      return false if @serverips
+      return false unless inside_bailiwick?(@server)
+      return true
+    end
+    
     # resolve server to serverips, return list of Referral objects to process
     def resolve(*args)
       raise "This Referral object has already been resolved" if resolved?
-      if inside_bailiwick?(@server) then
+      if noglue? then
         # foo.net IN NS ns.foo.net - no IP cached & no glue = failure
         Log.debug { "Attempt to resolve #{@server} with a bailiwick referral " +
                     " of #{bailiwick} - no glue record provided" }
-        @noglue = true
         return Array.new
       end
       refid = "#{@refid}.0"
@@ -163,14 +175,7 @@ module DNSTraverse
       Log.debug { "Calculating resolution: #{self}" }
       # create stats_resolve containing all the statistics of the resolution
       @stats_resolve = Hash.new
-      if @noglue then # in-bailiwick referral without glue
-        e = NoGlueError.new "No glue provided"
-        #r = DNSTraverse::Response.new(:message => e, :qname => @server,
-        #                              :qclass => @qclass, :qtype => @nsatype,
-        #                              :ip => @parent_ip, :bailiwick => @bailiwick,
-        #                              :decoded_query_cache => @decoded_query_cache)
-        #@stats_resolve[r.stats_key] = { :prob => 1.0, :response => r,
-        #  :referral => self }
+      if noglue? then # in-bailiwick referral without glue
         r = DNSTraverse::Response::NoGlue.new(:qname => @qname,
                                               :qclass => @qclass,
                                               :qtype => @qtype,

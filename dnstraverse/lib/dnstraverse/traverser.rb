@@ -11,6 +11,13 @@ module DNSTraverse
   
   TYPE_ARRAY_AAAA = ['AAAA', 'A'].freeze
   TYPE_ARRAY_A = ['A'].freeze
+  UNKNOWN_STRING = 'Unknown'.freeze
+  DJBDNS_STRING = 'djbdns'.freeze
+  BIND_STRING = 'Bind'.freeze
+  WINDOWS_STRING = 'Windows'.freeze
+  CHAOS_ARRAY = [ [ 'version.bind', 'version' ],
+  [ 'hostname.bind', 'hostname' ],
+  [ 'server.id', 'id' ] ].freeze
   
   class Traverser
     include MessageUtility
@@ -29,6 +36,7 @@ module DNSTraverse
       @progress_resolve = args[:progress_resolve] || method(:progress_null)
       @fast = args[:fast] || false # use fast algorithm, less accurate
       @answered = @fast ? Hash.new : nil # for fast algorithm
+      @seen = Hash.new # servernames to IP addresses of anything we see
       retries = args[:retries] || 2
       retry_delay = args[:retry_delay] || 2
       dnssec = args[:dnssec] || false
@@ -137,8 +145,14 @@ module DNSTraverse
           p.call(:state => @state, :referral => r, :stage => :answer)
           r.cleanup(cleanup)
           if @fast then
+            # store away in @answered hash so we can lookup later
             key = "#{r.qname}:#{r.qclass}:#{r.qtype}:#{r.server}"
             @answered[key] = r
+          end
+          unless r.server.nil? then
+            @seen[r.server] = [] unless @seen.has_key?(r.server)
+            @seen[r.server] << r.ips_as_array
+            @seen[r.server].uniq!
           end
           next
         else
@@ -161,7 +175,12 @@ module DNSTraverse
             newchildren = []
             for c in children do
               key = "#{c.qname}:#{c.qclass}:#{c.qtype}:#{c.server}"
-              if @answered.key?(key)
+              # check for previously stored answer
+              # special case noglue situation, don't use previous answer
+              # because attributes are complicated for stats collection and
+              # we don't want to merge them together - creating the noglue
+              # response object is fast anyway
+              if @answered.key?(key) and (not c.noglue?) then
                 Log.debug { "Fast method - completed #{c}" }
                 r.replace_child(c, @answered[key])
                 refres = r.referral_resolution?
@@ -243,6 +262,52 @@ module DNSTraverse
       run(r, :cleanup => cleanup)
       Log.debug { "run_query exit" }
       return r
+    end
+    
+    CHAOS_ARRAY = ['version.bind', 'hostname.bind', 'id.server'].freeze
+    
+    # returns string with data, exception or rcode
+    def chaos_get(ip, qname)
+      old_udp_size = @resolver.udp_size
+      begin
+        @resolver.udp_size = 512
+        @resolver.nameserver = ip
+        begin
+          msg = @resolver.query(qname, 'TXT', 'CH')
+          if a = msg_answers?(msg, :qname => qname,
+                              :qtype => 'TXT', :qclass => 'CH') then
+            data = a[0].data.sub(/[^0-9a-zA-Z. :!?-]/, '')
+            return data
+          end
+        rescue => e
+          return e
+        end
+      ensure
+        @resolver.udp_size = old_udp_size        
+      end
+      return msg.header.rcode
+    end
+    
+    def version(ip)
+      ver = nil
+      bind_ver = chaos_get(ip, 'version.bind')
+      server_ver = chaos_get(ip, 'version.server')
+      server_id = chaos_get(ip, 'id.server')
+      bind_hostname = chaos_get(ip, 'hostname.bind')
+      ver = bind_ver if bind_ver.is_a? String
+      ver = server_ver if server_ver.is_a? String
+      return "Bind #{ver}" if ver and ver =~ /^[489]\./
+      return "#{ver}" if ver
+      return "djbdns" if bind_ver == Dnsruby::RCode.FORMERR
+      if bind_ver == Dnsruby::RCode.NOTIMP then
+        return "Windows"
+      end
+    end
+    
+    # returns a Hash of all the servernames we've seen so far
+    # servername is the key, the value is an Array of IP addresses (strings)
+    def servers_encountered
+      return @seen
     end
     
   end

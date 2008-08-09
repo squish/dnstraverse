@@ -31,7 +31,7 @@ module DNSTraverse
     end
     
     def to_s
-      return "No glue for @{server}"
+      return "No glue for #{@server}"
     end
     
   end
