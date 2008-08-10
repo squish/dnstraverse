@@ -1,26 +1,10 @@
 #!/usr/bin/env ruby
-#
-#    DNSTraverse traverses the DNS to show statistics and information
-#    Copyright (C) 2008 James Ponder
-#
-#    This program is free software: you can redistribute it and/or modify
-#    it under the terms of the GNU General Public License as published by
-#    the Free Software Foundation, version 3 of the License.
-#
-#    This program is distributed in the hope that it will be useful,
-#    but WITHOUT ANY WARRANTY; without even the implied warranty of
-#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#    GNU General Public License for more details.
-#
-#    You should have received a copy of the GNU General Public License
-#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
-#
 # = Summary
 # Traverse the DNS from the root exploring all possible ways of
 # getting to the final destination domain name.  This is the command
-# line interface to DNSTraverse module.
+# line interface to the DNSTraverse module.
 #
-# == Usage
+# = Usage
 # dnstraverse [options] DOMAIN
 #    -t, --type TYPE              Select record type (A, AAAA, SRV, WKS, NS,
 #                                   CNAME, SOA, PTR, HINFO, MINFO, MX, TXT, ANY)
@@ -52,18 +36,28 @@
 #    -V, --version                Show version and exit
 #
 # == Example
-#
 #   dnstraverse www.nic.uk
 #   dnstraverse --fast www.google.com
 #   dnstraverse --fast --show-resolves --udp-size 1000 www.microsoft.com
 #
-# == Author
-#   James Ponder <james@squish.net>
+# = Copyright
+#   Copyright (c) 2008 James Ponder <james@squish.net>
+#   Portions Copyright (c) 2003,2004,2005 Roy Arends & Jakob Schlyter
 #
-# == Copyright
-#   Copyright (c) James Ponder 2008
-#   Released
-#   Portions copyright Roy Arends & Jakob Schlyter
+#   This program is free software: you can redistribute it and/or modify
+#   it under the terms of the GNU General Public License as published by
+#   the Free Software Foundation, version 3 of the License.
+
+require 'optparse'
+require 'logger'
+require 'rdoc/usage'
+require 'pp'
+
+require 'dnstraverse/traverser'
+require 'dnstraverse/log'
+require 'dnstraverse/fingerprint'
+
+Version = [ 0, 0, 1].freeze
 
 EMPTY_STRING = ''.freeze
 
@@ -130,20 +124,7 @@ def require_relative(path)
   require File.join(File.dirname(caller[0]), path.to_str)
 end
 
-# stdlib
-require 'optparse'
-###require 'ostruct'
-require 'logger'
-###require 'resolv'
-require 'rdoc/usage'
-require 'pp'
-
-# dnscheck
-require 'dnstraverse/traverser'
-require 'dnstraverse/log'
-require 'dnstraverse/fingerprint'
-
-Version = [ 0, 0, 1].freeze
+### Main program
 
 options = Hash.new
 options[:verbose] = false
