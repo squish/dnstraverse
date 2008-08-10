@@ -1,0 +1,4 @@
+DNSTraverse is a rubygem and command line program that allows you to traverse
+the DNS from the root exploring all possible ways of getting to the final
+destination domain name.  The results are probabilities of which server will
+respond and what they will respond with.
