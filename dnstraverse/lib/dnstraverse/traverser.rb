@@ -1,4 +1,4 @@
-gem 'dnsruby', '>1.16'
+gem 'dnsruby', '>=1.19'
 require 'dnsruby'
 require 'dnstraverse/info_cache'
 require 'dnstraverse/log'
@@ -11,13 +11,6 @@ module DNSTraverse
   
   TYPE_ARRAY_AAAA = ['AAAA', 'A'].freeze
   TYPE_ARRAY_A = ['A'].freeze
-  UNKNOWN_STRING = 'Unknown'.freeze
-  DJBDNS_STRING = 'djbdns'.freeze
-  BIND_STRING = 'Bind'.freeze
-  WINDOWS_STRING = 'Windows'.freeze
-  CHAOS_ARRAY = [ [ 'version.bind', 'version' ],
-  [ 'hostname.bind', 'hostname' ],
-  [ 'server.id', 'id' ] ].freeze
   
   class Traverser
     include MessageUtility
@@ -39,6 +32,7 @@ module DNSTraverse
       @seen = Hash.new # servernames to IP addresses of anything we see
       retries = args[:retries] || 2
       retry_delay = args[:retry_delay] || 2
+      packet_timeout = args[:packet_timeout] || 2
       dnssec = args[:dnssec] || false
       srcaddr = args[:srcaddr] || :'0.0.0.0'
       use_tcp = args[:always_tcp] || false
@@ -50,7 +44,7 @@ module DNSTraverse
       resargs = { :config_info => rescfg, :use_tcp => use_tcp, :recurse => false,
         :retry_times => retries, :retry_delay => retry_delay, :dnssec => dnssec,
         :ignore_truncation => ignore_truncation, :src_address => srcaddr,
-        :udp_size => udpsize.to_i }
+        :udp_size => udpsize.to_i, :packet_timeout => packet_timeout }
       Log.debug { "Creating remote resolver object"}
       CachingResolver.use_eventmachine(false)
       @resolver = CachingResolver.new(resargs) # used for set nameservers
@@ -150,9 +144,9 @@ module DNSTraverse
             @answered[key] = r
           end
           unless r.server.nil? then
-            @seen[r.server] = [] unless @seen.has_key?(r.server)
-            @seen[r.server] << r.ips_as_array
-            @seen[r.server].uniq!
+            @seen[r.server.downcase] = [] unless @seen.has_key?(r.server)
+            @seen[r.server.downcase] << r.ips_as_array
+            @seen[r.server.downcase].uniq!
           end
           next
         else
@@ -262,46 +256,6 @@ module DNSTraverse
       run(r, :cleanup => cleanup)
       Log.debug { "run_query exit" }
       return r
-    end
-    
-    CHAOS_ARRAY = ['version.bind', 'hostname.bind', 'id.server'].freeze
-    
-    # returns string with data, exception or rcode
-    def chaos_get(ip, qname)
-      old_udp_size = @resolver.udp_size
-      begin
-        @resolver.udp_size = 512
-        @resolver.nameserver = ip
-        begin
-          msg = @resolver.query(qname, 'TXT', 'CH')
-          if a = msg_answers?(msg, :qname => qname,
-                              :qtype => 'TXT', :qclass => 'CH') then
-            data = a[0].data.sub(/[^0-9a-zA-Z. :!?-]/, '')
-            return data
-          end
-        rescue => e
-          return e
-        end
-      ensure
-        @resolver.udp_size = old_udp_size        
-      end
-      return msg.header.rcode
-    end
-    
-    def version(ip)
-      ver = nil
-      bind_ver = chaos_get(ip, 'version.bind')
-      server_ver = chaos_get(ip, 'version.server')
-      server_id = chaos_get(ip, 'id.server')
-      bind_hostname = chaos_get(ip, 'hostname.bind')
-      ver = bind_ver if bind_ver.is_a? String
-      ver = server_ver if server_ver.is_a? String
-      return "Bind #{ver}" if ver and ver =~ /^[489]\./
-      return "#{ver}" if ver
-      return "djbdns" if bind_ver == Dnsruby::RCode.FORMERR
-      if bind_ver == Dnsruby::RCode.NOTIMP then
-        return "Windows"
-      end
     end
     
     # returns a Hash of all the servernames we've seen so far

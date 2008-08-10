@@ -1,4 +1,20 @@
-
+#!/usr/bin/env ruby
+#
+#    DNSTraverse traverses the DNS to show statistics and information
+#    Copyright (C) 2008 James Ponder
+#
+#    This program is free software: you can redistribute it and/or modify
+#    it under the terms of the GNU General Public License as published by
+#    the Free Software Foundation, version 3 of the License.
+#
+#    This program is distributed in the hope that it will be useful,
+#    but WITHOUT ANY WARRANTY; without even the implied warranty of
+#    MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#    GNU General Public License for more details.
+#
+#    You should have received a copy of the GNU General Public License
+#    along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
 # = Summary
 # Traverse the DNS from the root exploring all possible ways of
 # getting to the final destination domain name.  This is the command
@@ -37,7 +53,8 @@
 #
 # == Example
 #
-#   dnstraverse www.google.com
+#   dnstraverse www.nic.uk
+#   dnstraverse --fast www.google.com
 #   dnstraverse --fast --show-resolves --udp-size 1000 www.microsoft.com
 #
 # == Author
@@ -45,7 +62,7 @@
 #
 # == Copyright
 #   Copyright (c) James Ponder 2008
-#   My use only; no license granted; do not distribute
+#   Released
 #   Portions copyright Roy Arends & Jakob Schlyter
 
 EMPTY_STRING = ''.freeze
@@ -115,7 +132,7 @@ end
 
 # stdlib
 require 'optparse'
-require 'ostruct'
+###require 'ostruct'
 require 'logger'
 ###require 'resolv'
 require 'rdoc/usage'
@@ -124,6 +141,7 @@ require 'pp'
 # dnscheck
 require 'dnstraverse/traverser'
 require 'dnstraverse/log'
+require 'dnstraverse/fingerprint'
 
 Version = [ 0, 0, 1].freeze
 
@@ -193,8 +211,6 @@ args = { :state => options, :aaaa => options[:follow_aaaa],
   :udpsize => options[:udpsize] }
 args[:progress_main] = method(:progress_main) if options[:progress]
 args[:progress_resolve] = method(:progress_resolves) if options[:progress] and options[:resolves]
-#args[:serverlist] = method(:serverlist) if options[:serverlist]
-#args[:versions] = method(:versions) if options[:versions]
 args[:loglevel] = options[:debug] >= 1 ? Logger::DEBUG : Logger::UNKNOWN
 args[:libloglevel] = options[:debug] >= 2 ? Logger::DEBUG : Logger::UNKNOWN
 args[:always_tcp] = true if options[:always_tcp]
@@ -236,16 +252,27 @@ begin
                                :retries => options[:retries])
   puts if options[:progress]
   if options[:serverlist] then
+    puts "The following servers were encountered:"
+    fp = options[:versions] ? DNSTraverse::Fingerprint.new : nil
     seen = traverser.servers_encountered
     ss = seen.keys.sort! { |a,b| a.downcase.reverse! <=> b.downcase.reverse! }
+    w = 16
+    ss.each { |a| w = a.length if a.length > w }
     ss.each do |server|
       for ip in seen[server] do
-        resolver, extra = traverser.version(ip)
-        printf "%32s: %-16s %s%s", server, ip, resolver,
-        extra.nil? ? '' : " (#{extra})"
+        ver = ""
+        if options[:versions] then
+          fpres = fp.fingerprint(ip)
+          ver += " #{fpres[:vendor]}" if fpres.has_key?(:vendor)
+          ver += " #{fpres[:product]}" if fpres.has_key?(:product)
+          ver += " #{fpres[:version]}" if fpres.has_key?(:version)
+          ver += " #{fpres[:error]}" if fpres.has_key?(:error)
+        end
+        printf "%#{w}s: %-15s%s", server, ip, ver
         puts
       end
     end
+    puts
   end
   if options[:results] then
     puts "Results:"

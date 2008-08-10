@@ -138,11 +138,11 @@ module FingerprintRules
   ].freeze
   
   RULESET = [
-  { :fingerprint => ":query timed out" , :header => QY[0],  :query => "com. IN A", :ruleset => [
-    { :fingerprint => ":query timed out", :header => QY[7], :query => ". CH A", :ruleset => [
-      { :fingerprint => ":query timed out", :header => QY[6], :query => ". IN A", :ruleset => [
+  { :fingerprint => "query timed out" , :header => QY[0],  :query => "com. IN A", :ruleset => [
+    { :fingerprint => "query timed out", :header => QY[7], :query => ". CH A", :ruleset => [
+      { :fingerprint => "query timed out", :header => QY[6], :query => ". IN A", :ruleset => [
         { :fingerprint => IQ[38], :result => { :vendor => "Digital Lumber", :product => "Oak DNS", :version =>"" },  :qv => ":version.oak",}, 
-        { :fingerprint => ":query timed out", :result => "TIMEOUT",}, 
+##        { :fingerprint => "query timed out", :result => "TIMEOUT",}, 
         { :fingerprint => ".+", :state => "q0tq0tq7tq6r?", }, ]
       },
       { :fingerprint => IQ[35], :result => { :vendor => "XBILL", :product => "jnamed (dnsjava)", :version => "" }, },
@@ -226,7 +226,7 @@ module FingerprintRules
   },
   
   { :fingerprint => IQ[3], :header => QY[1], :ruleset => [
-    { :fingerprint => ":query timed out", :header => QY[5], :ruleset => [
+    { :fingerprint => "query timed out", :header => QY[5], :ruleset => [
       { :fingerprint => IQ[3], :result => { :vendor => "sourceforge", :product =>"Dents", :version =>""}, :qv => ":version.bind", },
       { :fingerprint => IQ[81], :result => { :vendor => "Microsoft", :product => "Windows DNS", :version => "2003" },},
       { :fingerprint => IQ[91], :result => { :vendor => "Microsoft", :product => "Windows DNS", :version => "2003" },},
@@ -247,7 +247,7 @@ module FingerprintRules
   },
   
   { :fingerprint => IQ[4], :header => QY[1], :query=> "jjjjjjjjjjjj IN A", :ruleset => [
-    { :fingerprint => IQ[17], :result => { :vendor => "ISC", :product => "BIND", :version =>"9.0.0b5 -- 9.0.1 [rcursion enabled]"},qv => ":version.bind", },
+    { :fingerprint => IQ[17], :result => { :vendor => "ISC", :product => "BIND", :version =>"9.0.0b5 -- 9.0.1 [rcursion enabled]"}, :qv => ":version.bind", },
     { :fingerprint => IQ[18], :header => QY[5], :query=> ". IN A" , :ruleset => [
       { :fingerprint => IQ[27], :result => { :vendor => "ISC", :product => "BIND", :version => "4.9.3 -- 4.9.11"}, :qv => ":version.bind", },
       { :fingerprint => IQ[28], :result => { :vendor => "ISC", :product => "BIND", :version => "4.8 -- 4.8.3"}, }, 
@@ -277,7 +277,7 @@ module FingerprintRules
   },
   
   { :fingerprint => IQ[5], :header => QY[1], :ruleset => [
-    { :fingerprint => IQ[11], :result => { :vendor => "ISC", :product => "BIND", :version => "9.2.3rc1 -- 9.4.0a0", option => "recursion enabled,split view" }, :qv => ":version.bind",},
+    { :fingerprint => IQ[11], :result => { :vendor => "ISC", :product => "BIND", :version => "9.2.3rc1 -- 9.4.0a0", :option => "recursion enabled,split view" }, :qv => ":version.bind",},
     { :fingerprint => IQ[17], :result => {:vendor => "ISC", :product =>"BIND", :version => "9.2.3rc1 -- 9.4.0a0 [recursion enabled]"}, :qv => ":version.bind",},
     { :fingerprint => IQ[18], :header => QY[5], :ruleset => [
       { :fingerprint => IQ[5], :header => QY[7], :query  => ". IN A", :ruleset => [
@@ -286,7 +286,7 @@ module FingerprintRules
         { :fingerprint => IQ[82], :result => {:vendor => "Mikrotik", :product =>"dsl/cable", :version => ""}, },
         { :fingerprint => ".+", :state => "q0r5q1r18q5r5q7r?", }, ]
       },
-      { :fingerprint => IQ[64], :result => "unknown, smells like old BIND 4", },
+##      { :fingerprint => IQ[64], :result => "unknown, smells like old BIND 4", },
       { :fingerprint => ".+", :state => "q0r5q1r18q5r?", }, ]
     }, 
     { :fingerprint => IQ[20], :header => QY[7], :ruleset => [
@@ -297,7 +297,7 @@ module FingerprintRules
       { :fingerprint => ".+", :state => "q0r5q1r20q7r?", }, ]
     },   
     { :fingerprint => IQ[21], :header => QY[4], :ruleset => [
-      { :fingerprint => ":query timed out", :result => {:vendor => "ISC", :product =>"BIND", :version => "9.2.0a1 -- 9.2.2-P3 [recursion enabled]"}, :qv => ":version.bind", },
+      { :fingerprint => "query timed out", :result => {:vendor => "ISC", :product =>"BIND", :version => "9.2.0a1 -- 9.2.2-P3 [recursion enabled]"}, :qv => ":version.bind", },
       { :fingerprint => IQ[29], :result => {:vendor => "ISC", :product =>"BIND", :version => "9.2.0a1 -- 9.2.0rc3 [recursion enabled]"}, :qv => ":version.bind", },
       { :fingerprint => IQ[61], :header => QY[0], :query  => ". A CLASS0" , :ruleset => [
         { :fingerprint => IQ[2], :result => {:vendor => "ISC", :product =>"BIND", :version => "9.2.0rc7 -- 9.2.2-P3 [recursion local]"}, :qv => ":version.bind", },
@@ -332,7 +332,7 @@ module FingerprintRules
   
   { :fingerprint => IQ[8], :header => QY[1], :ruleset => [
     { :fingerprint => IQ[23], :header => QY[2] , :query => ". CH A", :ruleset => [
-      { :fingerprint => ":query timed out", :result => { :vendor => "DJ Bernstein", :product => "TinyDNS", :version => "1.04"} ,},
+      { :fingerprint => "query timed out", :result => { :vendor => "DJ Bernstein", :product => "TinyDNS", :version => "1.04"} ,},
       { :fingerprint => IQ[32], :result => {:vendor => "DJ Bernstein", :product => "TinyDNS", :version => "1.05"} ,}, 
       { :fingerprint => ".+", :state => "q0r8q1r23q2r?",},]
     },
@@ -362,7 +362,7 @@ module FingerprintRules
     { :fingerprint => IQ[79], :result => { :vendor =>"4D", :product=>"WebSTAR", :version=>""}, },
     { :fingerprint => IQ[83], :result => { :vendor =>"Netopia", :product =>"dsl/cable", :version => ""},},
     { :fingerprint => IQ[90], :result => { :vendor =>"TZO", :product=>"Tzolkin DNS",:version=>""}, },
-    { :fingerprint => ":query timed out", :result => { :vendor =>"Netopia", :product =>"dsl/cable", :version=>""},},
+    { :fingerprint => "query timed out", :result => { :vendor =>"Netopia", :product =>"dsl/cable", :version=>""},},
     { :fingerprint => ".+", :state => "q0r62q7r?", }, ]
   },
   { :fingerprint => IQ[70], :result => { :vendor =>"Yutaka Sato", :product=>"DeleGate DNS", :version=>""},},
