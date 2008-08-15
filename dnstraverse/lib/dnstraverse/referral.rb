@@ -35,14 +35,14 @@ module DNSTraverse
       a = @serverips.map do |ip|
         sprintf("%.1f%%=", 100 * @serverweights[ip]).concat(ip =~ /^key:([^:]+(:[^:]*)?)/ ? $1 : ip)
       end
-      a.join(',')
+      a.sort.join(',')
     end
     
     def txt_ips
       return '' unless @serverips
       @serverips.map { |ip|
         ip =~ /^key:/ ? @stats_resolve[ip][:response].to_s : ip
-      }.join(',')
+      }.sort.join(',')
     end
     
     # ips_as_array will return any IP addresses we know for this referral server
@@ -209,9 +209,10 @@ module DNSTraverse
         # key = IP or key:blah, data is hash containing :prob, etc.
         if data[:response].status == :answered then # RR records
           # there were some answers - so add the probabilities in
-          for rr in data[:response].answers do
+          answers = data[:response].answers # weight RRs evenly
+          for rr in answers do
             @serverweights[rr.address.to_s]||= 0
-            @serverweights[rr.address.to_s]+= data[:prob]
+            @serverweights[rr.address.to_s]+= data[:prob] / answers.length
           end
         else
           # there were no answers - use the special key and record probabilities

@@ -155,12 +155,16 @@ module DNSTraverse
           r.cleanup(cleanup)
           if @fast then
             # store away in @answered hash so we can lookup later
-            key = "#{r.qname}:#{r.qclass}:#{r.qtype}:#{r.server}"
+            # XXX fast method should use IP and not server name?
+            # or maybe we should append IPs to end... 
+            key = "#{r.qname}:#{r.qclass}:#{r.qtype}:#{r.server}:#{r.txt_ips_verbose}"
+            key.downcase!
+            Log.debug { "Fast mode cache store: #{key}" }
             @answered[key] = r
           end
           unless r.server.nil? then
             @seen[r.server.downcase] = [] unless @seen.has_key?(r.server)
-            @seen[r.server.downcase] << r.ips_as_array
+            @seen[r.server.downcase].concat(r.ips_as_array)
             @seen[r.server.downcase].uniq!
           end
           next
@@ -183,7 +187,9 @@ module DNSTraverse
             Log.debug { "Checking #{r} for already completed children" }
             newchildren = []
             for c in children do
-              key = "#{c.qname}:#{c.qclass}:#{c.qtype}:#{c.server}"
+              key = "#{c.qname}:#{c.qclass}:#{c.qtype}:#{c.server}:#{c.txt_ips_verbose}"
+              key.downcase!
+              Log.debug { "Fast mode cache lookup: #{key}" }
               # check for previously stored answer
               # special case noglue situation, don't use previous answer
               # because attributes are complicated for stats collection and

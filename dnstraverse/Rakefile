@@ -13,7 +13,7 @@ spec = Gem::Specification.new do |s|
   s.files = Dir['**/**']
   s.executables = [ 'dnstraverse' ]
   s.test_files = Dir["test/test*.rb"]
-  s.has_rdoc = false
+  s.has_rdoc = true
   s.add_dependency('dnsruby', '>= 1.19')
 end
 Rake::GemPackageTask.new(spec).define
