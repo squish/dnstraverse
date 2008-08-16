@@ -65,6 +65,7 @@ module DNSTraverse
       @resolver = CachingResolver.new(resargs) # used for set nameservers
       @resolver.udp_size = udpsize.to_i
       Log.debug { "Creating local resolver object"}
+      resargs[:recurse] = true
       @lresolver = Dnsruby::Resolver.new(resargs) # left on local default
       @lresolver.udp_size = udpsize.to_i
       self
