@@ -37,14 +37,14 @@ module DNSTraverse
       for warn in warnings do
         Log.warn { warn }
       end
-      Log.debug { "#{msg.answerfrom} code #{msg.header.rcode}" }
+      Log.debug { "#{msg.answerfrom} code #{msg.rcode}" }
       return warnings
     end
     
     def msg_validate(msg, args)
       a = args.dup
       a[:qclass]||= 'IN'
-      return true if msg.header.rcode != Dnsruby::RCode.NOERROR
+      return true if msg.rcode != Dnsruby::RCode.NOERROR
       begin
         if msg.question.size != 1 then
           raise ResolveError, "#{msg.answerfrom} returned unexpected " +

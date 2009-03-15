@@ -104,7 +104,7 @@ module DNSTraverse
     
     def header2fp(header)
       list = [ header.qr, header.opcode, header.aa, header.tc, header.rd,
-      header.ra, header.ad, header.cd, header.rcode, header.qdcount,
+      header.ra, header.ad, header.cd, header.get_header_rcode, header.qdcount,
       header.ancount, header.nscount, header.arcount ]
       list.map! do | item |
         next '0' if item.instance_of? FalseClass

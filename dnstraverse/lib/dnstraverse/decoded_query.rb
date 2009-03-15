@@ -75,16 +75,16 @@ module DNSTraverse
       message = makequery_with_udpsize(my_udp_size)
       return message if message.is_a? Exception
       return message if my_udp_size == 512
-      return message if (message.header.rcode != Dnsruby::RCode.FORMERR and
-                         message.header.rcode != Dnsruby::RCode.NOTIMP and
-                         message.header.rcode != Dnsruby::RCode.SERVFAIL)
+      return message if (message.rcode != Dnsruby::RCode.FORMERR and
+                         message.rcode != Dnsruby::RCode.NOTIMP and
+                         message.rcode != Dnsruby::RCode.SERVFAIL)
       Log.debug { "Possible failure by nameserver to understand EDNS0 - retry" }
       message_retry = makequery_with_udpsize(512)
       @resolver.udp_size = my_udp_size
       return message if message_retry.is_a? Exception
-      return message if (message_retry.header.rcode == Dnsruby::RCode.FORMERR or
-                         message_retry.header.rcode == Dnsruby::RCode.NOTIMP or
-                         message_retry.header.rcode == Dnsruby::RCode.SERVFAIL)
+      return message if (message_retry.rcode == Dnsruby::RCode.FORMERR or
+                         message_retry.rcode == Dnsruby::RCode.NOTIMP or
+                         message_retry.rcode == Dnsruby::RCode.SERVFAIL)
       warnings_add "#{message.answerfrom} doesn't seem to support EDNS0"
       return message_retry
     end
@@ -128,7 +128,7 @@ module DNSTraverse
       @endname = msg_follow_cnames(@message, :qname => @qname, :qtype => @qtype,
                                    :bailiwick => @bailiwick)
       return process_restart unless inside_bailiwick?(@endname)
-      return process_error if @message.header.rcode != NOERROR
+      return process_error if @message.rcode != NOERROR
       @answers = msg_answers?(@message, :qname => @endname, :qtype => qtype)
       return process_answered if @answers
       return process_nodata if @auth_soa.size > 0 or @auth_ns.size == 0
@@ -147,7 +147,7 @@ module DNSTraverse
     
     def process_error
       @status = :error
-      case @message.header.rcode
+      case @message.rcode
         when Dnsruby::RCode::FORMERR
         @error_message = "Formate error (FORMERR)"
         when Dnsruby::RCode::SERVFAIL
@@ -159,7 +159,7 @@ module DNSTraverse
         when REFUSED
         @error_message = "Refused"
       else
-        @error_message = @message.header.rcode.to_s
+        @error_message = @message.rcode.to_s
       end
     end
     

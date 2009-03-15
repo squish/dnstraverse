@@ -13,7 +13,7 @@
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-gem 'dnsruby', '>=1.19'
+gem 'dnsruby', '>=1.26'
 require 'dnsruby'
 require 'dnstraverse/info_cache'
 require 'dnstraverse/log'
@@ -49,7 +49,7 @@ module DNSTraverse
       retry_delay = args[:retry_delay] || 2
       packet_timeout = args[:packet_timeout] || 2
       dnssec = args[:dnssec] || false
-      srcaddr = args[:srcaddr] || :'0.0.0.0'
+      srcaddr = args[:srcaddr] || '0.0.0.0'
       use_tcp = args[:always_tcp] || false
       ignore_truncation = args[:allow_tcp] ? false : true
       udpsize = args[:udpsize] || 512
