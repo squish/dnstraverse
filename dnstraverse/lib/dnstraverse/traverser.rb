@@ -71,6 +71,13 @@ module DNSTraverse
       self
     end
     
+    def report_progress(refobj, opts = {})
+      stage = opts[:stage] or raise "must pass option :stage"
+      refres = refobj.referral_resolution?
+      p = (refres == true ? @progress_resolve : @progress_main)
+      p.call(:state => @state, :referral => refobj, :stage => stage)
+    end
+
     ### change to get_all or something?
     def get_a_root(args)
       aaaa = args[:aaaa] || false
@@ -142,17 +149,13 @@ module DNSTraverse
           when :calc_resolve
           r = stack.pop
           r.resolve_calculate
-          refres = r.referral_resolution?
-          p = (refres == true ? @progress_resolve : @progress_main)
-          p.call(:state => @state, :referral => r, :stage => :resolve)
+	  report_progress r, :stage => :resolve
           stack << r # now need to process
           next
           when :calc_answer
           r = stack.pop
           r.answer_calculate
-          refres = r.referral_resolution?
-          p = (refres == true ? @progress_resolve : @progress_main)
-          p.call(:state => @state, :referral => r, :stage => :answer)
+	  report_progress r, :stage => :answer
           r.cleanup(cleanup)
           if @fast then
             # store away in @answered hash so we can lookup later
@@ -170,14 +173,14 @@ module DNSTraverse
           end
           next
         else
-          refres = r.referral_resolution?
-          p = (refres == true ? @progress_resolve : @progress_main)
-          p.call(:state => @state, :referral => r, :stage => :start)
+          report_progress r, :stage => :start
         end
         unless r.resolved? then
           # get resolve Referral objects, place on stack with placeholder
           stack << r << :calc_resolve
-          stack.push(*r.resolve({}).reverse)
+	  referrals = r.resolve({})
+          referrals.each { |c| report_progress c, :stage => new }
+          stack.push(*referrals.reverse) # XXX
           next
         end
         unless r.processed? then
@@ -199,15 +202,14 @@ module DNSTraverse
               if @answered.key?(key) and (not c.noglue?) then
                 Log.debug { "Fast method - completed #{c}" }
                 r.replace_child(c, @answered[key])
-                refres = r.referral_resolution?
-                p = (refres == true ? @progress_resolve : @progress_main)
-                p.call(:state => @state, :referral => c, :stage => :answer_fast)
+                report_progress c, :stage => :answer_fast
               else
                 newchildren << c
               end
             end
             children = newchildren
           end
+	  children.each { |c| report_progress c, :stage => :new }
           stack.push(*children.reverse)
           next
         end
@@ -260,7 +262,7 @@ module DNSTraverse
           Log.warn { "Failed to resolve #{rr.domainname} type #{qtype}" }
           next
         end
-        roots.push({ :name => rr.domainname, :ips => ips })
+        roots.push({ :name => rr.domainname.to_s, :ips => ips })
       end
       Log.debug { "find_roots exit, #{roots.map { |x| x[:name] }.join(', ') }" }
       return roots
@@ -275,6 +277,7 @@ module DNSTraverse
       r = Referral.new(:qname => qname, :qtype => qtype, :roots => args[:roots],
                        :maxdepth => maxdepth, :resolver => @resolver,
                        :nsatype => 'A')
+      report_progress r, :stage => :new
       run(r, :cleanup => cleanup)
       Log.debug { "run_query exit" }
       return r

@@ -30,6 +30,7 @@ module DNSTraverse
     attr_reader :auth_ns, :auth_soa, :auth_other # authority info
     attr_reader :exception_message, :error_message # :exception/:error only
     attr_reader :answers # :answered only
+    attr_reader :warnings # warnings about this query
     attr_reader :authoritynames # auth_ns converted to array of strings
     #    attr_reader :stats_key
     

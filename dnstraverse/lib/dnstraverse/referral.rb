@@ -24,9 +24,11 @@ module DNSTraverse
     include MessageUtility
     
     attr_reader :server, :serverips, :qname, :qclass, :qtype, :nsatype
-    attr_reader :refid, :message, :infocache, :parent, :bailiwick, :stats
+    attr_reader :refid, :refkey, :infocache, :parent, :bailiwick
+    attr_reader :stats
     attr_reader :warnings, :children, :parent_ip
     attr_reader :decoded_query_cache
+    attr_reader :responses
     
     EMPTY_ARRAY = [].freeze
     
@@ -88,7 +90,8 @@ module DNSTraverse
       @infocache = args[:infocache] || DNSTraverse::InfoCache.new
       @roots = args[:roots]
       @resolves = nil # Array of referral objects for resolving phase
-      @refid = args[:refid] || ''
+      @refid = args[:refid] || '' # node identifier, e.g. 1.2.1
+      @refkey = args[:refkey] || '' # node key, e.g. 3.4.3 (maximums)
       @server = args[:server] || nil # nil for the root-root server
       @serverips = args[:serverips] || nil
       @responses = Hash.new # responses/exception for each IP in @serverips
@@ -168,7 +171,6 @@ module DNSTraverse
                     " of #{bailiwick} - no glue record provided" }
         return Array.new
       end
-      refid = "#{@refid}.0"
       child_refid = 1
       starters, newbailiwick = @infocache.get_startservers(@server)
       Log.debug { "Resolving #{@server} type #{@nsatype} " }
@@ -177,8 +179,10 @@ module DNSTraverse
                           :serverips => starter[:ips],
                           :referral_resolution => true,
                           :qname => @server, :qclass => 'IN',
-        :qtype => @nsatype, :bailiwick => newbailiwick,
-        :refid => "#{refid}.#{child_refid}")
+                          :qtype => @nsatype,
+			  :bailiwick => newbailiwick,
+                          :refid => "#{@refid}.0.#{child_refid}",
+			  :refkey => "#{@refkey}.0.#{starters.count}")
          (@resolves||= []) << r
         child_refid+= 1
       end
@@ -314,15 +318,16 @@ module DNSTraverse
     
     def process_add_roots(args)
       Log.debug { "Special case processing, addding roots as referrals" }
-      refid_prefix = @refid == '' ? '' : "#{@refid}."
-      refid = 1
+      dot = @refid == '' ? '' : "."
+      child_refid = 1
       starters = (@infocache.get_startservers('', @nsatype))[0]
       @children[:rootroot] = Array.new # use 'rootroot' instead of IP address
       for root in starters do
         r = make_referral(:server => root[:name], :serverips => root[:ips],
-                          :refid => "#{refid_prefix}#{refid}")
+                          :refid => "#{@refid}#{dot}#{child_refid}",
+			  :refkey => "#{@refkey}#{dot}#{starters.count}")
         @children[:rootroot].push r
-        refid+= 1
+        child_refid+= 1
       end
     end
     
@@ -390,7 +395,8 @@ module DNSTraverse
         refargs = {
           :server => starter[:name],
           :serverips => starter[:ips],
-          :refid => "#{refid}.#{child_refid}"
+          :refid => "#{@refid}.#{child_refid}",
+	  :refkey => "#{@refkey}.#{starters.count}"
         }.merge(args)
         children.push make_referral(refargs)
         child_refid+= 1
@@ -400,6 +406,7 @@ module DNSTraverse
     
     def make_referral(args)
       raise "Must pass new refid" unless args[:refid]
+      raise "Must pass new refkey" unless args[:refkey]
       refargs = { :qname => @qname, :qclass => @qclass,
         :qtype => @qtype, :nsatype => @nsatype, :infocache => @infocache,
         :referral_resolution => @referral_resolution,
