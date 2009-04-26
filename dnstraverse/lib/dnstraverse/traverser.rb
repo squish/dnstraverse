@@ -159,8 +159,6 @@ module DNSTraverse
           r.cleanup(cleanup)
           if @fast then
             # store away in @answered hash so we can lookup later
-            # XXX fast method should use IP and not server name?
-            # or maybe we should append IPs to end... 
             key = "#{r.qname}:#{r.qclass}:#{r.qtype}:#{r.server}:#{r.txt_ips_verbose}"
             key.downcase!
             Log.debug { "Fast mode cache store: #{key}" }

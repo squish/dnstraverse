@@ -1,7 +1,8 @@
-#Sat Aug 09 11:08:16 BST 2008
+#Wed Apr 01 17:53:40 BST 2009
 WARNING=DO NOT MODIFY THIS FILE IF YOU DON'T UNDERSTAND
 defaultDestination=W\:/sync
 defaultVariables=
 eclipse.preferences.version=1
-map|0=/|,|,|,|,
+map|0=/|,|,|dnstraverse/|,
+map|1=dnstraverse|,|,|,|,
 useCurrentDateForDestinationFiles=false

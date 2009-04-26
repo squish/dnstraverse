@@ -444,7 +444,7 @@ module DNSTraverse
           when :error
           puts "#{response.error_message} at #{where}"
           when :nodata
-          puts "NODATA (for this type) at #{where})"
+          puts "NODATA (for this type) at #{where}"
           when :answered
           puts "Answer from #{where}"
           if results then

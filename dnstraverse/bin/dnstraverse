@@ -13,7 +13,7 @@
 #        --root-aaaa              TODO Look for IPv6 addresses for root servers
 #        --follow-aaaa            TODO Only follow AAAA records for referrals
 #        --udp-size SIZE          Turn on EDNS0 with given UDP size
-#        --max-depth DEPTH        Maximum depth to traverse (default 10)
+#        --max-depth DEPTH        Maximum depth to traverse (default 16)
 #        --retries TIMES          Number of 2s retries before timing out (2)
 #        --[no-]allow-tcp         Try using tcp if udp truncated (default true)
 #        --[no-]always-tcp        Always use tcp (default false)
@@ -21,7 +21,7 @@
 #        --[no-]show-progress     Display progress information (default true)
 #        --[no-]show-all-stats    Display statistics as we go (default false)
 #        --[no-]show-resolves     Display referral resolutions (default false)
-#        --[no-]show-serverlist   Display list of servers seen (default true)
+#        --[no-]show-servers      Display list of servers seen (default false)
 #        --[no-]show-versions     Display versions of dns servers (default true)
 #        --[no-]show-results      Display the results (default true)
 #
@@ -136,7 +136,7 @@ options[:broken] = false
 options[:progress] = true
 options[:summary] = true
 options[:resolves] = false
-options[:serverlist] = true
+options[:servers] = false
 options[:versions] = true
 options[:domainname] = nil
 options[:follow_aaaa] = false
@@ -147,7 +147,7 @@ options[:allstats] = false
 options[:saveobjects] = false
 options[:fast] = false
 options[:udpsize] = 512
-options[:maxdepth] = 10
+options[:maxdepth] = 16
 options[:retries] = 2
 options[:results] = true
 
@@ -167,7 +167,7 @@ opts.on("--[no-]follow-aaaa") { |o| options[:follow_aaaa] = o }
 opts.on("--[no-]root-aaaa") { |o| options[:root_aaaa] = o }
 opts.on("--[no-]show-progress") { |o| options[:progress] = o }
 opts.on("--[no-]show-resolves") { |o| options[:resolves] = o }
-opts.on("--[no-]show-serverlist") { |o| options[:serverlist] = o }
+opts.on("--[no-]show-servers") { |o| options[:servers] = o }
 opts.on("--[no-]show-versions") { |o| options[:versions] = o }
 opts.on("--[no-]show-all-stats") { |o| options[:allstats] = o }
 opts.on("--[no-]show-results") { |o| options[:results] = o }
@@ -232,7 +232,7 @@ begin
                                :maxdepth => options[:maxdepth],
                                :retries => options[:retries])
   puts if options[:progress]
-  if options[:serverlist] then
+  if options[:servers] then
     puts "The following servers were encountered:"
     fp = options[:versions] ? DNSTraverse::Fingerprint.new : nil
     seen = traverser.servers_encountered
