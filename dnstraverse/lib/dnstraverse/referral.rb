@@ -17,6 +17,7 @@ require 'dnstraverse/response'
 require 'dnstraverse/response_noglue'
 require 'dnstraverse/info_cache'
 require 'dnstraverse/decoded_query_cache'
+require 'dnstraverse/summary_stats'
 
 module DNSTraverse
   
@@ -25,10 +26,10 @@ module DNSTraverse
     
     attr_reader :server, :serverips, :qname, :qclass, :qtype, :nsatype
     attr_reader :refid, :refkey, :infocache, :parent, :bailiwick
-    attr_reader :stats
     attr_reader :warnings, :children, :parent_ip
     attr_reader :decoded_query_cache
     attr_reader :responses
+    attr_reader :stats
     
     EMPTY_ARRAY = [].freeze
     
@@ -108,6 +109,7 @@ module DNSTraverse
       @serverweights = Hash.new # key is IP
       @warnings = Array.new # warnings will be placed here
       @processed = false # flag for processed? method
+      @calculated = false # flag for calculated? method
       raise "Must pass Resolver" unless @resolver
       @infocache.add_hints('', args[:roots]) if args[:roots] # add root hints
       unless @decoded_query_cache then
@@ -253,6 +255,7 @@ module DNSTraverse
         @stats.each_pair do |key, data|
           Log.debug { sprintf "Answer: %.2f%% %s\n", data[:prob] * 100, key }
         end
+        @calculated = true
         return
       end
       for ip in @serverips do
@@ -281,10 +284,15 @@ module DNSTraverse
       @stats.each_pair do |key, data|
         Log.debug { sprintf "Answer: %.2f%% %s\n", data[:prob] * 100, key }
       end
+      @calculated = true
     end
     
     def processed?
       return @processed
+    end
+    
+    def calculated?
+      return @calculated
     end
     
     def resolved?
@@ -464,7 +472,12 @@ module DNSTraverse
         end
       end
     end
+
+    # Returns a SummaryStats object
+    def summary_stats
+      return nil unless calculated?
+      @summary_stats_object||= DNSTraverse::SummaryStats.new(self)
+    end
     
   end
-  
 end

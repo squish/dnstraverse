@@ -65,6 +65,8 @@ module DNSTraverse
     def evaluate
       @status = @decoded_query.status # use this as a base
       if @status != :exception
+        # XXX order of cacheable_good is answer, authority, additional
+        # perhaps we should add some checking for overlap between sections?
         @infocache.add(@decoded_query.cacheable_good)
       end
       case @decoded_query.status

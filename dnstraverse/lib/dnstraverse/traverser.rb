@@ -13,7 +13,7 @@
 #    You should have received a copy of the GNU General Public License
 #    along with this program.  If not, see <http://www.gnu.org/licenses/>.
 
-gem 'dnsruby', '>=1.26'
+gem 'dnsruby', '>=1.30'
 require 'dnsruby'
 require 'dnstraverse/info_cache'
 require 'dnstraverse/log'
@@ -61,7 +61,6 @@ module DNSTraverse
         :ignore_truncation => ignore_truncation, :src_address => srcaddr,
         :udp_size => udpsize.to_i, :packet_timeout => packet_timeout }
       Log.debug { "Creating remote resolver object"}
-      CachingResolver.use_eventmachine(false)
       @resolver = CachingResolver.new(resargs) # used for set nameservers
       @resolver.udp_size = udpsize.to_i
       Log.debug { "Creating local resolver object"}
@@ -146,16 +145,16 @@ module DNSTraverse
         r = stack.pop
         Log.debug { "running on stack entry #{r}" }
         case r
-          when :calc_resolve
+        when :calc_resolve
           r = stack.pop
           r.resolve_calculate
-	  report_progress r, :stage => :resolve
+          report_progress r, :stage => :resolve
           stack << r # now need to process
           next
-          when :calc_answer
+        when :calc_answer
           r = stack.pop
           r.answer_calculate
-	  report_progress r, :stage => :answer
+          report_progress r, :stage => :answer
           r.cleanup(cleanup)
           if @fast then
             # store away in @answered hash so we can lookup later
@@ -176,7 +175,7 @@ module DNSTraverse
         unless r.resolved? then
           # get resolve Referral objects, place on stack with placeholder
           stack << r << :calc_resolve
-	  referrals = r.resolve({})
+          referrals = r.resolve({})
           referrals.each { |c| report_progress c, :stage => new }
           stack.push(*referrals.reverse) # XXX
           next
@@ -207,7 +206,7 @@ module DNSTraverse
             end
             children = newchildren
           end
-	  children.each { |c| report_progress c, :stage => :new }
+          children.each { |c| report_progress c, :stage => :new }
           stack.push(*children.reverse)
           next
         end

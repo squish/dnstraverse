@@ -152,9 +152,7 @@ module DNSTraverse
       msg = Dnsruby::Message.new
       msg.header = fp2header(headerstr)
       msg.add_question(decode_query(query))
-      q = Queue.new
-      @resolver.send_async(msg, q)
-      id, result, error = q.pop
+      result, error = @resolver.send_plain_message(msg)
       ans = result || error
       return nil, FINGERPRINT_TIMEOUT if ans.is_a? Dnsruby::ResolvTimeout
       return nil, ans.to_s if ans.is_a? Exception

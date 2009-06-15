@@ -34,7 +34,6 @@ module DNSTraverse
       @requests+= 1
       ip = self.config.nameserver[0]
       udp_size = self.udp_size
-      self.udp_size = udp_size # workaround for bug in dnsruby
       Log.debug { "Querying #{name} to #{ip} class #{klass} type #{type}"}
       key = "key:res:#{ip}:#{name}:#{klass}:#{type}:#{udp_size}"
       if @cache.has_key?(key) then
@@ -46,9 +45,8 @@ module DNSTraverse
       begin
         msg = Dnsruby::Message.new
         msg.add_question(name, type, klass)
-        q = Queue.new
-        send_async(msg, q)
-        id, result, error = q.pop
+        msg.add_additional(Dnsruby::RR::OPT.new(udp_size)) if udp_size > 512
+        result, error = send_plain_message(msg)
         answer = result || error
       rescue => e
         answer = RuntimeError.new "Dnsruby failure: " + e.to_s

@@ -24,15 +24,15 @@ module DNSTraverse
       warnings = Array.new
       if args[:want_recursion] then
         if not msg.header.ra then
-          warnings.push "#{msg.answerfrom} doesn't allow recursion"
+          warnings << "#{msg.answerfrom} doesn't allow recursion"
         end
       else
         if msg.header.ra then
-          warnings.push "#{msg.answerfrom} allows recursion"
+          warnings << "#{msg.answerfrom} allows recursion"
         end
       end
       if msg.header.tc then
-        warnings.push "#{msg.answerfrom} sent truncated packet"
+        warnings << "#{msg.answerfrom} sent truncated packet"
       end
       for warn in warnings do
         Log.warn { warn }
@@ -134,11 +134,11 @@ module DNSTraverse
         type = rr.type.to_s
         klass = rr.klass.to_s
         if type.casecmp('NS') == 0 && klass.casecmp('IN') == 0
-          ns.push rr
+          ns << rr
         elsif type.casecmp('SOA') == 0 && klass.casecmp('IN') == 0
-          soa.push rr
+          soa << rr
         else
-          other.push rr
+          other << rr
         end
       end
       return ns, soa, other      
@@ -173,26 +173,31 @@ module DNSTraverse
       return false
     end
     
-    def msg_cacheable(msg, bailiwick, type = :both)
-      good, bad = Array.new, Array.new
+    def msg_cacheable(msg, bailiwick, type = :all)
+      good, bad, other = [], [], []
       bw = bailiwick.to_s
       bwend = "." + bw
-      for section in [:additional, :authority] do
+      for section in [:answer, :authority, :additional] do
         for rr in msg.send(section) do
-          name = rr.name.to_s
-          if bailiwick.nil? or name.casecmp(bw) == 0 or
-            name =~ /#{bwend}$/i then
-            good.push rr
+          if rr.type.to_s == "OPT" then
+            other << rr
           else
-            bad.push rr
+            name = rr.name.to_s
+            if bailiwick.nil? or name.casecmp(bw) == 0 or
+              name =~ /#{bwend}$/i then
+                good << rr
+            else
+              bad << rr
+            end
           end
         end
       end
       good.map {|x| Log.debug { "Records within bailiwick: " + x.to_s } }
       bad.map {|x| Log.debug { "Records outside bailiwick: " + x.to_s } }
+      other.map {|x| Log.debug { "Other records discarded: " + x.to_s } }
       return good if type == :good
       return bad if type == :bad
-      return good, bad
+      return good, bad, other
     end
     
   end
