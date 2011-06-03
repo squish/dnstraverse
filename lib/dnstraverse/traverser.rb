@@ -176,7 +176,7 @@ module DNSTraverse
           # get resolve Referral objects, place on stack with placeholder
           stack << r << :calc_resolve
           referrals = r.resolve({})
-          referrals.each { |c| report_progress c, :stage => new }
+          referrals.each { |c| report_progress c, :stage => :new }
           stack.push(*referrals.reverse) # XXX
           next
         end

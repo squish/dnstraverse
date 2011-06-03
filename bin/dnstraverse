@@ -6,34 +6,6 @@
 #
 # = Usage
 # dnstraverse [options] DOMAIN
-#    -t, --type TYPE              Select record type (A, AAAA, SRV, WKS, NS,
-#                                   CNAME, SOA, PTR, HINFO, MINFO, MX, TXT, ANY)
-#        --root-server HOST       Root DNS server (default - ask local resolver)
-#        --[no-]all-root-servers  Find all root servers (default false)
-#        --root-aaaa              TODO Look for IPv6 addresses for root servers
-#        --follow-aaaa            TODO Only follow AAAA records for referrals
-#        --udp-size SIZE          Turn on EDNS0 with given UDP size
-#        --max-depth DEPTH        Maximum depth to traverse (default 16)
-#        --retries TIMES          Number of 2s retries before timing out (2)
-#        --[no-]allow-tcp         Try using tcp if udp truncated (default true)
-#        --[no-]always-tcp        Always use tcp (default false)
-#
-#        --[no-]show-progress     Display progress information (default true)
-#        --[no-]show-all-stats    Display statistics as we go (default false)
-#        --[no-]show-resolves     Display referral resolutions (default false)
-#        --[no-]show-servers      Display list of servers seen (default false)
-#        --[no-]show-versions     Display versions of dns servers (default true)
-#        --[no-]show-results      Display the results (default true)
-#
-#        --fast                   Short-cut answers using previous information,
-#                                 less accurate but usually ok - by-passes the
-#                                 proper simulation of the resolver cache.
-#
-#    -v, --[no-]verbose           Run verbosely
-#    -d, --debug                  Debug mode: One -d for DNSCheck debug
-#                                             Two -d also turns on library debug
-#    -h, --help                   Show full help
-#    -V, --version                Show version and exit
 #
 # == Example
 #   dnstraverse www.nic.uk
@@ -56,8 +28,7 @@ require 'pp'
 require 'dnstraverse/traverser'
 require 'dnstraverse/log'
 require 'dnstraverse/fingerprint'
-
-Version = [ 0, 0, 1].freeze
+require 'dnstraverse/version'
 
 EMPTY_STRING = ''.freeze
 
@@ -145,36 +116,37 @@ options[:always_tcp] = false
 options[:allow_tcp] = false
 options[:allstats] = false
 options[:saveobjects] = false
-options[:fast] = false
-options[:udpsize] = 512
+options[:fast] = true
+options[:udpsize] = 2048
 options[:maxdepth] = 16
 options[:retries] = 2
 options[:results] = true
 
 opts = OptionParser.new
 opts.banner = "Usage: #{File.basename($0)} [options] DOMAIN"  
-opts.on("-v", "--[no-]verbose") { |o| options[:verbose] = o }
-opts.on("-d", "--[no-]debug") { |o| options[:debug]+= 1 }
-opts.on("-r", "--root-server HOST") { |o| options[:root] = o }
-opts.on("-a", "--all-root-servers") { |o| options[:allroots] = o }
-opts.on("-t", "--type TYPE", Dnsruby::Types.constants) { |o| options[:type] = o }
-opts.on("--udp-size SIZE") { |o| options[:udpsize] = o }
-opts.on("--allow-tcp") { |o| options[:allow_tcp] = o }
-opts.on("--always-tcp") { |o| options[:always_tcp] = o }
-opts.on("--max-depth DEPTH") { |o| options[:maxdepth] = o }
-opts.on("--retries TIMES") { |o| options[:retries] = o }
-opts.on("--[no-]follow-aaaa") { |o| options[:follow_aaaa] = o }
-opts.on("--[no-]root-aaaa") { |o| options[:root_aaaa] = o }
-opts.on("--[no-]show-progress") { |o| options[:progress] = o }
-opts.on("--[no-]show-resolves") { |o| options[:resolves] = o }
-opts.on("--[no-]show-servers") { |o| options[:servers] = o }
-opts.on("--[no-]show-versions") { |o| options[:versions] = o }
-opts.on("--[no-]show-all-stats") { |o| options[:allstats] = o }
-opts.on("--[no-]show-results") { |o| options[:results] = o }
+opts.on("-v", "--[no-]verbose", "Run verbosely") { |o| options[:verbose] = o }
+opts.on("-d", "--[no-]debug", "Debug mode.  Use twice to turn on library debug.") { |o| options[:debug]+= 1 }
+opts.on("-r", "--root-server HOST", "Root DNS server (default - ask local resolver)") { |o| options[:root] = o }
+opts.on("-a", "--all-root-servers", "Find all root servers (default false)") { |o| options[:allroots] = o }
+opts.on("-t", "--type TYPE", Dnsruby::Types.constants,
+        "Record type (A, AAAA, SRV, WKS, NS, CNAME, SOA, PTR, HINFO, MINFO, MX, TXT, ANY") { |o| options[:type] = o }
+opts.on("--udp-size SIZE", "UDP packet size (default 2048).  Set to 512 to turn off EDNS0.") { |o| options[:udpsize] = o }
+opts.on("--allow-tcp", "Try using tcp if udp truncated (default true)") { |o| options[:allow_tcp] = o }
+opts.on("--always-tcp", "Always use tcp (default false)") { |o| options[:always_tcp] = o }
+opts.on("--max-depth DEPTH", "Maximum traversal depth (default 16)") { |o| options[:maxdepth] = o }
+opts.on("--retries TIMES", "Number of 2s retries before timing out (default 2)") { |o| options[:retries] = o }
+opts.on("--[no-]follow-aaaa", "Only follow AAAA records for referrals (default false)") { |o| options[:follow_aaaa] = o }
+opts.on("--[no-]root-aaaa", "Look for IPv6 addresses for root servers (default false)") { |o| options[:root_aaaa] = o }
+opts.on("--[no-]show-progress", "Display progress information (default true)") { |o| options[:progress] = o }
+opts.on("--[no-]show-resolves", "Display referral resolutions (default false)") { |o| options[:resolves] = o }
+opts.on("--[no-]show-servers", "Display list of servers seen (default false)") { |o| options[:servers] = o }
+opts.on("--[no-]show-versions", "Display versions of dns servers (default true)") { |o| options[:versions] = o }
+opts.on("--[no-]show-all-stats", "Display statistics as we go (default false)") { |o| options[:allstats] = o }
+opts.on("--[no-]show-results", "Display the results (default true)") { |o| options[:results] = o }
 opts.on("--save-objects") { |o| options[:saveobjects] = o }
-opts.on("--fast") { |o| options[:fast] = o }
-opts.on_tail("-h", "--help") { RDoc::usage }
-opts.on_tail("-V", "--version") { puts Version.join('.'); exit }
+opts.on("--[no-]fast", "Fast mode (default true) turn off to be more accurate" ) { |o| options[:fast] = o }
+opts.on_tail("-h", "--help", "Show full help") { puts opts; exit }
+opts.on_tail("-V", "--version", "Show version") { puts DNSTraverse::Version::STRING; exit }
 begin
   opts.parse!
   if ARGV.size != 1 then
@@ -183,7 +155,8 @@ begin
   options[:domainname] = ARGV.shift
 rescue OptionParser::ParseError => e
   puts e
-  RDoc::usage(1, 'Usage')
+  puts opts
+  exit
 end
 Log.level = options[:debug] > 0 ? Logger::DEBUG : Logger::UNKNOWN
 Log.debug {"Options chosen:\n" }
