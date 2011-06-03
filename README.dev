@@ -1,0 +1,24 @@
+commands
+- rake -T
+
+sudoers setup
+- To allow 'sudo rake install'
+- Defaults:james !secure_path,!env_reset
+
+git setup
+- useful for Jeweler
+- git config --global user.email james@squish.net
+- git config --global user.name 'James Ponder'
+- git config github.user squish
+- git config github.token xxx
+
+bundler
+- http://gembundler.com/
+- manages dependencies placed in Gemfile
+- bundle install
+
+jeweler
+- http://technicalpickles.com/posts/craft-the-perfect-gem-with-jeweler/
+- adds lots of nice Rake tasks like install via the Rakefile
+- manages version number
+- 
