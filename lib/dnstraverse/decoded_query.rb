@@ -51,6 +51,7 @@ module DNSTraverse
       @warnings = nil # Warnings if there are any (array)
       query unless @message
       process
+      Log.debug { "Query to #{@ip} for #{@qname}/#{@qclass}/#{@qtype} decoded status=#{@status}" }
       return self
     end
     
@@ -155,7 +156,7 @@ module DNSTraverse
         @error_message = "Server failure (SERVFAIL)"
         when Dnsruby::RCode::NXDOMAIN
         @error_message = "No such domain (NXDOMAIN)"
-        when NOTIMP
+        when Dnsruby::RCode.NOTIMP
         @error_message = "Not implemented (NOTIMP)"
         when REFUSED
         @error_message = "Refused"

@@ -158,8 +158,7 @@ module DNSTraverse
           r.cleanup(cleanup)
           if @fast then
             # store away in @answered hash so we can lookup later
-            key = "#{r.qname}:#{r.qclass}:#{r.qtype}:#{r.server}:#{r.txt_ips_verbose}"
-            key.downcase!
+            key = "#{r.qname}:#{r.qclass}:#{r.qtype}:#{r.server}:#{r.txt_ips_verbose}".downcase!
             Log.debug { "Fast mode cache store: #{key}" }
             @answered[key] = r
           end
@@ -169,48 +168,42 @@ module DNSTraverse
             @seen[r.server.downcase].uniq!
           end
           next
-        else
-          report_progress r, :stage => :start
         end
+        # ok time to process a new item
+        if @fast then
+          Log.debug { "Checking #{r} for already completed earlier" }
+          key = "#{r.qname}:#{r.qclass}:#{r.qtype}:#{r.server}:#{r.txt_ips_verbose}".downcase!
+          Log.debug { "Fast mode cache lookup: #{key}" }
+          # check for previously stored answer
+          # special case noglue situation, don't use previous answer
+          # because attributes are complicated for stats collection and
+          # we don't want to merge them together - creating the noglue
+          # response object is fast anyway
+          if @answered.key?(key) and (not r.noglue?) then
+            Log.debug { "Fast method - completed #{r}" }
+            r.parent.replace_child(r, @answered[key])
+            report_progress r, :stage => :answer_fast
+            next
+          end
+        end
+        report_progress r, :stage => :start
         unless r.resolved? then
           # get resolve Referral objects, place on stack with placeholder
           stack << r << :calc_resolve
           referrals = r.resolve({})
           referrals.each { |c| report_progress c, :stage => :new }
-          stack.push(*referrals.reverse) # XXX
+          stack.push(*referrals.reverse)
           next
         end
-        unless r.processed? then
-          # get Referral objects, place on stack with placeholder
-          stack << r << :calc_answer
-          children = r.process({})
-          if @fast then
-            Log.debug { "Checking #{r} for already completed children" }
-            newchildren = []
-            for c in children do
-              key = "#{c.qname}:#{c.qclass}:#{c.qtype}:#{c.server}:#{c.txt_ips_verbose}"
-              key.downcase!
-              Log.debug { "Fast mode cache lookup: #{key}" }
-              # check for previously stored answer
-              # special case noglue situation, don't use previous answer
-              # because attributes are complicated for stats collection and
-              # we don't want to merge them together - creating the noglue
-              # response object is fast anyway
-              if @answered.key?(key) and (not c.noglue?) then
-                Log.debug { "Fast method - completed #{c}" }
-                r.replace_child(c, @answered[key])
-                report_progress c, :stage => :answer_fast
-              else
-                newchildren << c
-              end
-            end
-            children = newchildren
-          end
-          children.each { |c| report_progress c, :stage => :new }
-          stack.push(*children.reverse)
-          next
+        # get Referral objects, place on stack with placeholder
+        stack << r << :calc_answer
+        children = r.process({})
+        #children.each { |c| report_progress c, :stage => :new }
+        children.each do |c|
+          key = "#{c.qname}:#{c.qclass}:#{c.qtype}:#{c.server}:#{c.txt_ips_verbose}".downcase!
+          report_progress c, :stage => @answered.key?(key) ? :new_fast : :new
         end
-        raise "Fatal stack error at #{r} - size still #{stack.size}"
+        stack.push(*children.reverse)
       end
     end
     

@@ -113,14 +113,15 @@ options[:domainname] = nil
 options[:follow_aaaa] = false
 options[:root_aaaa] = false
 options[:always_tcp] = false
-options[:allow_tcp] = false
+options[:allow_tcp] = true
 options[:allstats] = false
 options[:saveobjects] = false
 options[:fast] = true
 options[:udpsize] = 2048
-options[:maxdepth] = 16
+options[:maxdepth] = 24
 options[:retries] = 2
 options[:results] = true
+options[:quiet] = false
 
 opts = OptionParser.new
 opts.banner = "Usage: #{File.basename($0)} [options] DOMAIN"  
@@ -133,7 +134,7 @@ opts.on("-t", "--type TYPE", Dnsruby::Types.constants,
 opts.on("--udp-size SIZE", "UDP packet size (default 2048).  Set to 512 to turn off EDNS0.") { |o| options[:udpsize] = o }
 opts.on("--allow-tcp", "Try using tcp if udp truncated (default true)") { |o| options[:allow_tcp] = o }
 opts.on("--always-tcp", "Always use tcp (default false)") { |o| options[:always_tcp] = o }
-opts.on("--max-depth DEPTH", "Maximum traversal depth (default 16)") { |o| options[:maxdepth] = o }
+opts.on("--max-depth DEPTH", "Maximum traversal depth (default 24)") { |o| options[:maxdepth] = o }
 opts.on("--retries TIMES", "Number of 2s retries before timing out (default 2)") { |o| options[:retries] = o }
 opts.on("--[no-]follow-aaaa", "Only follow AAAA records for referrals (default false)") { |o| options[:follow_aaaa] = o }
 opts.on("--[no-]root-aaaa", "Look for IPv6 addresses for root servers (default false)") { |o| options[:root_aaaa] = o }
@@ -146,6 +147,7 @@ opts.on("--[no-]show-results", "Display the results (default true)") { |o| optio
 opts.on("--save-objects") { |o| options[:saveobjects] = o }
 opts.on("--[no-]fast", "Fast mode (default true) turn off to be more accurate" ) { |o| options[:fast] = o }
 opts.on_tail("-h", "--help", "Show full help") { puts opts; exit }
+opts.on_tail("-q", "--quiet", "Supress supplementary information") { options[:quiet] = true }
 opts.on_tail("-V", "--version", "Show version") { puts DNSTraverse::Version::STRING; exit }
 begin
   opts.parse!
@@ -171,6 +173,13 @@ args[:always_tcp] = true if options[:always_tcp]
 args[:allow_tcp] = true if options[:allow_tcp]
 args[:fast] = true if options[:fast]
 begin
+  unless options[:quiet] then
+    puts "# Using fast mode" if options[:fast]
+    puts "# Limiting traverse to one root" unless options[:allroots]
+    puts "# UDP size #{options[:udpsize]} (EDNS0 is #{options[:udpsize == 512] ? "off" : "on"})"
+    puts "# Retries #{options[:retries]}, max depth #{options[:maxdepth]}"
+    puts "# Allow TCP is #{options[:allow_tcp]}, always TCP is #{options[:always_tcp]}"
+  end
   traverser = DNSTraverse::Traverser.new(args)
   if options[:root] then
     root = options[:root]

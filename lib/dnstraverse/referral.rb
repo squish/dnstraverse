@@ -427,6 +427,9 @@ module DNSTraverse
       @children.each_key do | ip |
         @children[ip].map! { |c| c.equal?(before) ? after : c }
       end
+      if @resolves then
+        @resolves.map! { |c| c.equal?(before) ? after : c }
+      end
     end
     
     def stats_display(args)
