@@ -15,6 +15,7 @@
 
 require 'dnstraverse/response'
 require 'dnstraverse/response_noglue'
+require 'dnstraverse/response_loop'
 require 'dnstraverse/info_cache'
 require 'dnstraverse/decoded_query_cache'
 require 'dnstraverse/summary_stats'
@@ -164,6 +165,26 @@ module DNSTraverse
       return true
     end
     
+    # look out for endless loops
+    # e.g. while looking for a.b we get b NS c.d
+    # and while looking for c.d we get d NS a.b
+    # which would take us back to b NS c.d
+    def loop?
+      return false if @serverips
+      parent = @parent
+      until parent.nil? do
+        if parent.qname.to_s == @qname.to_s and
+          parent.qclass.to_s == @qclass.to_s and
+          parent.qtype.to_s == @qtype.to_s and
+          parent.server == @server and
+          parent.serverips.nil?
+            return true
+        end
+        parent = parent.parent
+      end
+      return false
+    end
+    
     # resolve server to serverips, return list of Referral objects to process
     def resolve(*args)
       raise "This Referral object has already been resolved" if resolved?
@@ -171,6 +192,11 @@ module DNSTraverse
         # foo.net IN NS ns.foo.net - no IP cached & no glue = failure
         Log.debug { "Attempt to resolve #{@server} with a bailiwick referral " +
                     " of #{bailiwick} - no glue record provided" }
+        return Array.new
+      end
+      if loop? then
+        # b IN NS c.d, d IN NS a.b
+        Log.debug { "Loop reached at server #{server}" }
         return Array.new
       end
       child_refid = 1
@@ -203,6 +229,15 @@ module DNSTraverse
                                               :server => @server,
                                               :ip => @parent_ip,
                                               :bailiwick => @bailiwick)
+        @stats_resolve[r.stats_key] = { :prob => 1.0, :response => r,
+          :referral => self }
+      elsif loop? then # endless loop, e.g. b. NS c.d, d NS a.b
+        r = DNSTraverse::Response::Loop.new(:qname => @qname,
+                                            :qclass => @qclass,
+                                            :qtype => @qtype,
+                                            :server => @server,
+                                            :ip => @parent_ip,
+                                            :bailiwick => @bailiwick)
         @stats_resolve[r.stats_key] = { :prob => 1.0, :response => r,
           :referral => self }
       else
@@ -339,31 +374,8 @@ module DNSTraverse
       end
     end
     
-    def check_loop?(args) # :ip, :qtype, :qname, :qclass
-      parent = @parent
-      until parent.nil? do
-        if parent.qname.to_s == args[:qname].to_s and
-          parent.qclass.to_s == args[:qclass].to_s and
-          parent.qtype.to_s == args[:qtype].to_s and
-          parent.serverips and parent.serverips.include?(args[:ip]) then
-          exit 1 # XXX fix me
-          return RuntimeError.new("Loop detected")
-        end
-        parent = parent.parent
-      end
-      return nil
-    end
-    
     def process_normal(args)
       Log.debug { "process " + self.to_s }
-      #      if l = check_loop?(:ip => ip, :qname => @qname,
-      #                         :qtype => @qtype, :qclass => @qclass) then
-      #        for ip in @serverips do
-      #          @responses[ip] = l
-      #          done
-      #          return
-      #        end
-      #      end
       for ip in @serverips do
         Log.debug { "Process normal #{ip}" }
         next if ip =~ /^key:/ # resolve failed on something
@@ -376,6 +388,7 @@ module DNSTraverse
                                       :qclass => @qclass, :qtype => @qtype,
                                       :bailiwick => @bailiwick,
                                       :infocache => @infocache, :ip => ip,
+                                      :server => @server,
                                       :decoded_query_cache => @decoded_query_cache)
         Log.debug { "Process normal #{ip} - done making response" }
         @responses[ip] = r
@@ -404,7 +417,7 @@ module DNSTraverse
           :server => starter[:name],
           :serverips => starter[:ips],
           :refid => "#{@refid}.#{child_refid}",
-	  :refkey => "#{@refkey}.#{starters.count}"
+          :refkey => "#{@refkey}.#{starters.count}"
         }.merge(args)
         children.push make_referral(refargs)
         child_refid+= 1
@@ -451,7 +464,11 @@ module DNSTraverse
           puts "#{response.exception_message} at #{where}"
           when :noglue
           puts "No glue at #{referral.parent.server} " + 
-            "(#{response.ip}) for #{response.server}"
+            "(#{response.ip}) for #{referral.server}"
+          when :referral_lame
+          puts "Lame referral from #{where}"
+          when :loop
+          puts "Loop encountered at #{response.server} "
           when :error
           puts "#{response.error_message} at #{where}"
           when :nodata

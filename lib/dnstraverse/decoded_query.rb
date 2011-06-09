@@ -158,7 +158,7 @@ module DNSTraverse
         @error_message = "No such domain (NXDOMAIN)"
         when Dnsruby::RCode.NOTIMP
         @error_message = "Not implemented (NOTIMP)"
-        when REFUSED
+        when Dnsruby::RCode.REFUSED
         @error_message = "Refused"
       else
         @error_message = @message.rcode.to_s

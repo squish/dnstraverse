@@ -198,10 +198,14 @@ module DNSTraverse
         # get Referral objects, place on stack with placeholder
         stack << r << :calc_answer
         children = r.process({})
-        #children.each { |c| report_progress c, :stage => :new }
         children.each do |c|
-          key = "#{c.qname}:#{c.qclass}:#{c.qtype}:#{c.server}:#{c.txt_ips_verbose}".downcase!
-          report_progress c, :stage => @answered.key?(key) ? :new_fast : :new
+          if @fast
+            key = "#{c.qname}:#{c.qclass}:#{c.qtype}:#{c.server}:#{c.txt_ips_verbose}".downcase!
+            stage = @answered.key?(key) ? :new_fast : :new
+          else
+            stage = :new
+          end
+          report_progress c, :stage => stage
         end
         stack.push(*children.reverse)
       end

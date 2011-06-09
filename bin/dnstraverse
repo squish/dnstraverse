@@ -171,7 +171,7 @@ args[:loglevel] = options[:debug] >= 1 ? Logger::DEBUG : Logger::UNKNOWN
 args[:libloglevel] = options[:debug] >= 2 ? Logger::DEBUG : Logger::UNKNOWN
 args[:always_tcp] = true if options[:always_tcp]
 args[:allow_tcp] = true if options[:allow_tcp]
-args[:fast] = true if options[:fast]
+args[:fast] = options[:fast]
 begin
   unless options[:quiet] then
     puts "# Using fast mode" if options[:fast]

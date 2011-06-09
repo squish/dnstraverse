@@ -26,6 +26,7 @@ module DNSTraverse
     attr_reader :status # our status, expanding on DecodedQuery status
     attr_reader :starters, :starters_bailiwick # :referral/:restart only
     attr_reader :stats_key
+    attr_reader :server
     
     # :qname, :qclass, :qtype, :ip, :bailiwick, optional :message
     def initialize(args)
@@ -33,6 +34,7 @@ module DNSTraverse
         :qtype => args[:qtype], :ip => args[:ip],
         :bailiwick => args[:bailiwick], :message => args[:message] }
       @decoded_query = args[:decoded_query_cache].query(dqc_args)
+      @server = args[:server]
       @infocache = InfoCache.new(args[:infocache]) # our infocache
       @starters = nil # initial servers for :referral/:restart
       @starters_bailiwick = nil # for initial servers for :referral/:restart
@@ -50,7 +52,7 @@ module DNSTraverse
     
     def update_stats_key
       r = @decoded_query
-      @stats_key = "key:#{r.ip}:#{@status}:#{r.qname}:#{r.qclass}:#{r.qtype}"
+      @stats_key = "key:#{r.ip}:#{@server}:#{@status}:#{r.qname}:#{r.qclass}:#{r.qtype}"
     end
     
     # clean up the workings
