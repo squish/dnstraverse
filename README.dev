@@ -1,5 +1,6 @@
 commands
 - rake -T - show commands
+- edit version in lib/dnstraverse/version.rb
 - rake gemcutter:release - release to rubygems.org
 
 sudoers setup
@@ -28,4 +29,12 @@ jeweler
 - http://technicalpickles.com/posts/craft-the-perfect-gem-with-jeweler/
 - adds lots of nice Rake tasks like install via the Rakefile
 - manages version number
-- 
+
+enterprise ruby
+- download source tgz version to /usr/local/src/dist, untgz to /usr/local/src
+- install anything installer indicates, e.g. buiild-essential, zlib1g-dev,
+  libssl-dev, libreadline5-dev
+- apt-get install mysql-server mysql-clientlibmysqlclient-dev - first
+- install to /usr/local/ruby-enterprise-1.8.7-2011.03
+- install apache as directed
+- set DocumentRoot to public dir to make rails app live

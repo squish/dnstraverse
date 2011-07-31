@@ -31,6 +31,7 @@ module DNSTraverse
     attr_reader :decoded_query_cache
     attr_reader :responses
     attr_reader :stats
+    attr_accessor :replaced_by
     
     EMPTY_ARRAY = [].freeze
     
@@ -437,6 +438,7 @@ module DNSTraverse
     end
     
     def replace_child(before, after)
+      before.replaced_by = after
       @children.each_key do | ip |
         @children[ip].map! { |c| c.equal?(before) ? after : c }
       end

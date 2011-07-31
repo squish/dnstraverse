@@ -55,18 +55,24 @@ module DNSTraverse
         next unless id =~ /#{rule[:fingerprint]}/
         if rule.has_key?(:result) then
           result = rule[:result]
+          if result.is_a? String
+            ref[:state] = rule[:result]
+            ref[:error] = rule[:result]
+            ref[:id] = id
+            return ret
+          end
           for k in [:vendor, :product, :option] do
             ret[k] = result[k] if result.has_key?(k) and result[k].length > 0
           end
           case @version_style
-            when :none
+          when :none
             ret[:version] = result[:version]
-            when :append
+          when :append
             ver = query_version(ip, result[:qv])
             ver = query_version(ip, "version.bind") unless ver
             ret[:version] = result[:version]
             ret[:version]+= " (#{ver})" if ver
-            when :override
+          when :override
             ver = query_version(ip, result[:qv])
             ver = query_version(ip, "version.bind") unless ver
             ret[:version] = ver ? ver : result[:version]

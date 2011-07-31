@@ -56,7 +56,7 @@ def progress_main(args)
   stage = args[:stage]
   return if r.refid.empty?
   case stage
-    when :answer then
+  when :answer then
     if o[:verbose] then
       for warning in r.warnings do
         puts "#{r.refid} WARNING: #{warning}"
@@ -65,15 +65,15 @@ def progress_main(args)
     if o[:allstats] then
       r.stats_display(:prefix => "#{r.refid} Results:", :results => false)
     end
-    when :start then
+  when :start then
     print o[:verbose] ? referral_txt_verbose(r) : referral_txt_normal(r)
     if r.serverips.nil? then
       print " -- resolving"
     end
     print "\n"
-    when :answer_fast then
+  when :answer_fast then
     print o[:verbose] ? referral_txt_verbose(r) : referral_txt_normal(r)
-    puts " -- completed earlier"
+    puts " -- completed earlier (#{r.replaced_by.refid})"
   end
 end
 
@@ -82,10 +82,10 @@ def progress_resolves(args)
   r = args[:referral]
   stage = args[:stage]
   case stage
-    when :start then
+  when :start then
     print o[:verbose] ? referral_txt_verbose(r) : referral_txt_normal(r)
     print "\n"
-    when :answer_fast then
+  when :answer_fast then
     print o[:verbose] ? referral_txt_verbose(r) : referral_txt_normal(r)
     puts " -- completed earlier"
   end

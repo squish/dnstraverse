@@ -195,9 +195,12 @@ module DNSTraverse
           stack.push(*referrals.reverse)
           next
         end
-        # get Referral objects, place on stack with placeholder
+        # put a placeholder on the stack
         stack << r << :calc_answer
+        # get the children
         children = r.process({})
+        # now report progress.  we already can tell whether this will be
+        # completed in fast mode or not, so we report this information
         children.each do |c|
           if @fast
             key = "#{c.qname}:#{c.qclass}:#{c.qtype}:#{c.server}:#{c.txt_ips_verbose}".downcase!
@@ -207,6 +210,7 @@ module DNSTraverse
           end
           report_progress c, :stage => stage
         end
+        # push the children on the stack
         stack.push(*children.reverse)
       end
     end
