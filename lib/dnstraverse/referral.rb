@@ -487,8 +487,8 @@ module DNSTraverse
           puts "#{indent}#{key}"
         end
         if response.status != :answered and
-         ((response.qname != @qname) or (response.qclass != @qclass) or
-         (response.qtype != @qtype)) then
+         ((response.qname.downcase != @qname.downcase) or (response.qclass.downcase != @qclass.downcase) or
+         (response.qtype.downcase != @qtype.downcase)) then
           puts "#{indent}While querying #{response.qname}/" +
           "#{response.qclass}/#{response.qtype}"
         end

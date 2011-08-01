@@ -56,9 +56,9 @@ module DNSTraverse
         if rule.has_key?(:result) then
           result = rule[:result]
           if result.is_a? String
-            ref[:state] = rule[:result]
-            ref[:error] = rule[:result]
-            ref[:id] = id
+            ret[:state] = result
+            ret[:error] = result
+            ret[:id] = id
             return ret
           end
           for k in [:vendor, :product, :option] do
