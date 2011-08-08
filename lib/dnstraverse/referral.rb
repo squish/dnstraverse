@@ -30,7 +30,7 @@ module DNSTraverse
     attr_reader :warnings, :children, :parent_ip
     attr_reader :decoded_query_cache
     attr_reader :responses
-    attr_reader :stats
+    attr_reader :stats, :stats_resolve
     attr_accessor :replaced_by
     
     EMPTY_ARRAY = [].freeze
@@ -486,9 +486,11 @@ module DNSTraverse
           puts "Stopped at #{where})"
           puts "#{indent}#{key}"
         end
+        # downcase for symbols doesn't work with ruby 1.8 :-( remove for 1.9
         if response.status != :answered and
-         ((response.qname.downcase != @qname.downcase) or (response.qclass.downcase != @qclass.downcase) or
-         (response.qtype.downcase != @qtype.downcase)) then
+         ((response.qname.downcase != @qname.downcase) or
+          (response.qclass.to_s.downcase != @qclass.to_s.downcase) or
+          (response.qtype.to_s.downcase != @qtype.to_s.downcase)) then
           puts "#{indent}While querying #{response.qname}/" +
           "#{response.qclass}/#{response.qtype}"
         end
