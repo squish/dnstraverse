@@ -66,6 +66,44 @@ module DNSTraverse
       end
     end
 
+    def text(args = {})
+      prefix = args[:prefix] || '  '
+      indent = args[:indent] || "#{prefix}          "
+      o = ''
+      each_summary do |type, sinfo|
+        if type == :answered then
+          each_answer do |prob, records|
+            initial = "#{prefix}#{txt_prob prob} answered with "
+            rr_prefix = "\n" + (' ' * initial.length)
+            o << initial
+            o << records.map {|x| x.to_s.gsub(/\s+/, ' ') }.join(rr_prefix) + "\n"
+          end
+        end
+      end
+      each_summary do |type, sinfo|
+        if type != :answered then
+          case type
+          when :nodata
+            o << "#{prefix}#{txt_prob sinfo[:prob]} found no such record"
+          when :lame_referral
+            o << "#{prefix}#{txt_prob sinfo[:prob]} resulted in a lame referral"
+          when :exception
+            o << "#{prefix}#{txt_prob sinfo[:prob]} resulted in an exception"
+          when :error
+            o << "#{prefix}#{txt_prob sinfo[:prob]} resulted in an error"
+          when :noglue
+            o << "#{prefix}#{txt_prob sinfo[:prob]} found no glue"
+          when :loop
+            o << "#{prefix}#{txt_prob sinfo[:prob]} resulted in a loop"
+          else
+            o << "#{prefix}#{txt_prob sinfo[:prob]} #{type}"
+          end
+          o << "\n"
+        end
+      end
+      return o
+    end
+
     private
     def get_summary_stats(referral)
       s = {}
@@ -90,5 +128,11 @@ module DNSTraverse
       end
       return a
     end
+
+    def txt_prob(prob)
+      t = sprintf("%.1f%%", prob * 100).sub(/\.0%/, '%')
+      return sprintf("%5s", t) # 99.9%
+    end
+
   end
 end

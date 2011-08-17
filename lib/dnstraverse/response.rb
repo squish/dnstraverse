@@ -50,9 +50,15 @@ module DNSTraverse
       super
     end
     
+    # set the statistics key - this is used to decide when to merge statistics
+    # together.  the same key = merge, different key = keep separate
+    # this is why exception name/message is added for exception types
     def update_stats_key
       r = @decoded_query
       @stats_key = "key:#{r.ip}:#{@server}:#{@status}:#{r.qname}:#{r.qclass}:#{r.qtype}"
+      if @stats == :exception and r.message.is_a? Exception then
+        @stats_key+= ":#{r.message}"
+      end
     end
     
     # clean up the workings

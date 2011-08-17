@@ -32,7 +32,6 @@ module DNSTraverse
     attr_reader :answers # :answered only
     attr_reader :warnings # warnings about this query
     attr_reader :authoritynames # auth_ns converted to array of strings
-    #    attr_reader :stats_key
     
     def initialize(args)
       @message = args[:message] || nil # skip query - use this message/exception

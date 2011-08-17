@@ -298,7 +298,6 @@ module DNSTraverse
         serverweight = @serverweights[ip] # set at initialize or at resolve
         if ip =~ /^key:/ then # resolve failed for some reason
           # pull out the statistics on the resolution and copy over
-          raise "duplicate key found" if @stats[ip] # assertion
           if @stats_resolve[ip][:prob] != serverweight then # assertion
             $stderr.puts "#{@stats_resolve[ip][:prob]} vs #{serverweight}"
             @stats_resolve[ip].each_pair do |a,b|
@@ -306,13 +305,27 @@ module DNSTraverse
             end
             raise "unexpected probability" 
           end
-          @stats[ip] = @stats_resolve[ip].dup
+          if @stats[ip] then
+            # the same condition was found on another IP of this referral
+            # and we've already added this key before
+            # most likely this is an exception
+            @stats[ip][:prob]+= @stats_resolve[ip][:prob]
+          else
+            # copy over the resolve statistics to the final stats
+            @stats[ip] = @stats_resolve[ip].dup
+          end
           next
         end
         if @children[ip] then
           stats_calculate_children(@stats, @children[ip], serverweight)
         else
           response = @responses[ip]
+          prob = serverweight
+          if @stats[response.stats_key] then
+            # the same condition was found as a result of resolve stage and
+            # when we asked the server. most likely this is an exception.
+            prob+= @stats[response.stats_key][:prob]
+          end
           @stats[response.stats_key] = { :prob => serverweight,
             :response => response, :referral => self }
         end
@@ -345,19 +358,23 @@ module DNSTraverse
       @server.nil? ? true : false
     end
     
+    # process this Referral object:
+    #   query each IP in @serverips and create a Response object
+    #   return an array of children
     def process(args)
       raise "This Referral object has already been processed" if processed?
       raise "You need to resolve this Referral object" unless resolved?
-      if (server) then
-        process_normal(args)
-      else
+      @processed = true
+      unless (server) then
         # special case - no server means start from the top with the roots
         process_add_roots(args)
+        return @children.values.flatten
       end
+      process_normal(args)
       # return a set of Referral objects that need to be processed
-      # XXX flatten really necessary?
-      @processed = true
-      return @children.values.flatten.select {|x| x.is_a? Referral}
+      # this is just using @serverips for ordering the children properly
+      # because we numbered them all already
+      return @serverips.map {|ip| @children[ip] }.flatten.select {|x| x.is_a? Referral }
     end
     
     def process_add_roots(args)
@@ -377,11 +394,16 @@ module DNSTraverse
     
     def process_normal(args)
       Log.debug { "process " + self.to_s }
+      childsets = @serverips.reject {|ip| ip =~ /^key:/ }.count
+      childset = 0
       for ip in @serverips do
+        childset+= 1
         Log.debug { "Process normal #{ip}" }
         next if ip =~ /^key:/ # resolve failed on something
         m = nil
-        if @refid.scan(/\./).length >= @maxdepth.to_i then
+        # resolves get an extra .0. so strip those out before counting
+        current_depth = @refid.split('.').select {|x| x != '0' }.length
+        if current_depth >= @maxdepth.to_i then
           m = RuntimeError.new "Maxdepth #{@maxdepth} exceeded"
         end
         Log.debug { "Process normal #{ip} - making response" }
@@ -396,15 +418,15 @@ module DNSTraverse
         case r.status
           when :restart, :referral then
           Log.debug { "Process normal #{ip} - making referrals" }
+          refid =  childsets == 1 ? @refid :  "#{@refid}.#{childset}"
+          refkey = childsets == 1 ? @refkey : "#{@refkey}.#{childsets}"
           @children[ip] = make_referrals(:qname => r.endname,
                                          :starters => r.starters,
                                          :bailiwick => r.starters_bailiwick,
                                          :infocache => r.infocache,
+                                         :refid => refid, :refkey => refkey,
                                          :parent_ip => ip)
           Log.debug { "Process normal #{ip} - done making referrals" }
-          # XXX shouldn't be any children unless referrals
-          #when :referral_lame then
-          #@children[ip] = RuntimeError.new "Improper or lame delegation"
         end
       end
     end
@@ -414,12 +436,12 @@ module DNSTraverse
       children = Array.new
       child_refid = 1
       for starter in starters do
-        refargs = {
+        refargs = args.merge({
           :server => starter[:name],
           :serverips => starter[:ips],
-          :refid => "#{@refid}.#{child_refid}",
-          :refkey => "#{@refkey}.#{starters.count}"
-        }.merge(args)
+          :refid => "#{args[:refid]}.#{child_refid}",
+          :refkey => "#{args[:refkey]}.#{starters.count}"
+        })
         children.push make_referral(refargs)
         child_refid+= 1
       end

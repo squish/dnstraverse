@@ -74,7 +74,8 @@ module DNSTraverse
       stage = opts[:stage] or raise "must pass option :stage"
       refres = refobj.referral_resolution?
       p = (refres == true ? @progress_resolve : @progress_main)
-      p.call(:state => @state, :referral => refobj, :stage => stage)
+      newopts = opts.merge({:state => @state, :referral => refobj})
+      p.call(newopts)
     end
 
     ### change to get_all or something?
@@ -197,11 +198,21 @@ module DNSTraverse
         end
         # put a placeholder on the stack
         stack << r << :calc_answer
-        # get the children
+        # get children, one set per IP address of this name server in array
         children = r.process({})
         # now report progress.  we already can tell whether this will be
         # completed in fast mode or not, so we report this information
+        total_sets = children.map { |c| c.parent_ip }.uniq.count
+        # if there is more than one set (i.e. a DNS server has more than one
+        # IP address and we had to do multiple queries), the children will
+        # been numbered with an extra set digit, and we want to report this to
+        # the user interface
+        seen_parent_ip = Hash.new
         children.each do |c|
+          if total_sets > 1 and not seen_parent_ip.include?(c.parent_ip) then
+            report_progress c, :stage => :new_referral_set
+            seen_parent_ip[c.parent_ip] = true
+          end
           if @fast
             key = "#{c.qname}:#{c.qclass}:#{c.qtype}:#{c.server}:#{c.txt_ips_verbose}".downcase!
             stage = @answered.key?(key) ? :new_fast : :new
