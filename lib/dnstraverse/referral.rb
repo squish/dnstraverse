@@ -25,6 +25,7 @@ module DNSTraverse
   class Referral
     include MessageUtility
     
+    attr_reader :status # :normal, :loop, :noglue
     attr_reader :server, :serverips, :qname, :qclass, :qtype, :nsatype
     attr_reader :refid, :refkey, :infocache, :parent, :bailiwick
     attr_reader :warnings, :children, :parent_ip
@@ -85,6 +86,7 @@ module DNSTraverse
     # of a resolution of a referral that didn't have glue records will have
     # this set to true so that you can distringuish this detail
     def initialize(args)
+      @status = args[:status] || :normal
       @resolver = args[:resolver] # Dnsruby::Resolver object
       @qname = args[:qname]
       @qclass = args[:qclass] || :IN
@@ -191,14 +193,16 @@ module DNSTraverse
       raise "This Referral object has already been resolved" if resolved?
       if noglue? then
         # foo.net IN NS ns.foo.net - no IP cached & no glue = failure
-        Log.debug { "Attempt to resolve #{@server} with a bailiwick referral " +
+        Log.debug { "Resolve: #{@server} with a bailiwick referral " +
                     " of #{bailiwick} - no glue record provided" }
-        return Array.new
+        @status = :noglue
+        return EMPTY_ARRAY
       end
       if loop? then
         # b IN NS c.d, d IN NS a.b
-        Log.debug { "Loop reached at server #{server}" }
-        return Array.new
+        Log.debug { "Resolve: Loop reached at server #{server}" }
+        @status = :loop
+        return EMPTY_ARRAY
       end
       child_refid = 1
       starters, newbailiwick = @infocache.get_startservers(@server)
@@ -223,7 +227,8 @@ module DNSTraverse
       Log.debug { "Calculating resolution: #{self}" }
       # create stats_resolve containing all the statistics of the resolution
       @stats_resolve = Hash.new
-      if noglue? then # in-bailiwick referral without glue
+      case @status
+      when :noglue # in-bailiwick referral without glue
         r = DNSTraverse::Response::NoGlue.new(:qname => @qname,
                                               :qclass => @qclass,
                                               :qtype => @qtype,
@@ -232,7 +237,7 @@ module DNSTraverse
                                               :bailiwick => @bailiwick)
         @stats_resolve[r.stats_key] = { :prob => 1.0, :response => r,
           :referral => self }
-      elsif loop? then # endless loop, e.g. b. NS c.d, d NS a.b
+      when :loop # endless loop, e.g. b. NS c.d, d NS a.b
         r = DNSTraverse::Response::Loop.new(:qname => @qname,
                                             :qclass => @qclass,
                                             :qtype => @qtype,
@@ -347,7 +352,6 @@ module DNSTraverse
     def resolved?
       # root-root is always resolved, otherwise check we have IP addresses
       return true if is_rootroot?
-      return true if @noglue
       return false if @serverips.nil?
       return true
     end

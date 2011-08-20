@@ -17,7 +17,7 @@ module DNSTraverse
   
   class Response::Loop < Response
     
-    attr_reader :qname, :qclass, :qtype, :ip, :bailiwick, :server
+    attr_reader :qname, :qclass, :qtype, :ip, :bailiwick, :server, :status
     
     def initialize(args)
       # we queried @ip about @qname/@qclass/@qtype and received @server as a
@@ -28,10 +28,6 @@ module DNSTraverse
       @bailiwick = args[:bailiwick]
       @ip = args[:ip]
       @server = args[:server]
-      @decoded_query = nil
-      @infocache = nil
-      @starters = nil
-      @starters_bailiwick = nil
       @status = :loop
       update_stats_key
       return self
@@ -42,7 +38,7 @@ module DNSTraverse
     end
     
     def update_stats_key
-      @stats_key = "key:#{@ip}:#{@status}:#{@qname}:#{@qclass}:#{@qtype}:#{@server}:#{@bailiwick}"
+      @stats_key = "key:#{@status}:#{@ip}:#{@qname}:#{@qclass}:#{@qtype}:#{@server}:#{@bailiwick}"
     end
     
     def to_s
