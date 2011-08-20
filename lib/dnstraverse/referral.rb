@@ -484,20 +484,21 @@ module DNSTraverse
         referral = data[:referral]
         where = "#{referral.server} (#{response.ip})"
         case response.status
-          when :exception
+        when :exception
           puts "#{response.exception_message} at #{where}"
-          when :noglue
+        when :noglue
           puts "No glue at #{referral.parent.server} " + 
             "(#{response.ip}) for #{referral.server}"
-          when :referral_lame
-          puts "Lame referral from #{where}"
-          when :loop
+        when :referral_lame
+          puts "Lame referral from #{referral.parent.server} " + 
+            "(#{referral.parent_ip}) to #{where}"
+        when :loop
           puts "Loop encountered at #{response.server} "
-          when :error
+        when :error
           puts "#{response.error_message} at #{where}"
-          when :nodata
+        when :nodata
           puts "NODATA (for this type) at #{where}"
-          when :answered
+        when :answered
           puts "Answer from #{where}"
           if results then
             for rr in data[:response].answers do

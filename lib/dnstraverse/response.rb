@@ -55,7 +55,7 @@ module DNSTraverse
     # this is why exception name/message is added for exception types
     def update_stats_key
       r = @decoded_query
-      @stats_key = "key:#{r.ip}:#{@server}:#{@status}:#{r.qname}:#{r.qclass}:#{r.qtype}"
+      @stats_key = "key:#{@status}:#{r.ip}:#{@server}:#{r.qname}:#{r.qclass}:#{r.qtype}"
       if @stats == :exception and r.message.is_a? Exception then
         @stats_key+= ":#{r.message}"
       end
@@ -69,6 +69,15 @@ module DNSTraverse
       ###@auth_ns = @auth_soa = @auth_other = nil
     end
     
+    def inside_bailiwick?(name)
+      return true if @bailiwick.nil?
+      bwend = ".#{@bailiwick}"
+      namestr = name.to_s
+      return true if namestr.casecmp(@bailiwick) == 0
+      return true if namestr =~ /#{bwend}$/i
+      return false
+    end
+
     # enrich the decoded_query to do the cache, lame checking and get starters
     def evaluate
       @status = @decoded_query.status # use this as a base
@@ -78,13 +87,16 @@ module DNSTraverse
         @infocache.add(@decoded_query.cacheable_good)
       end
       case @decoded_query.status
-        when :restart
+      when :restart
         @starters, @starters_bailiwick = @infocache.get_startservers(@decoded_query.endname)
-        when :referral
+      when :referral
         @starters, @starters_bailiwick = @infocache.get_startservers(@decoded_query.endname)
+        unless @decoded_query.bailiwick.nil? or @starters_bailiwick =~ /\.#{@decoded_query.bailiwick}$/
+          @status = :referral_lame
+        end
         starternames = @starters.map { |x| x[:name].to_s.downcase }
         if starternames.sort != @decoded_query.authoritynames.sort
-          @status = :referral_lame
+          @decoded_query.warnings_add "Referred authority names do not match query cache expectations"
         end
       end
     end

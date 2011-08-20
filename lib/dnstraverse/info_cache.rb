@@ -99,6 +99,7 @@ module DNSTraverse
         starters.push({ :name => nameserver, :ips => ips })
       end
       newbailiwick = ns[0].name.to_s
+      newbailiwick = nil if newbailiwick == '' # back to root
       Log.debug { "For domain #{domain} using start servers: " +
         starters.map { |x| x[:name] }.join(', ') }
       return starters, newbailiwick

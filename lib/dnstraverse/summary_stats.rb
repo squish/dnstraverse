@@ -85,7 +85,7 @@ module DNSTraverse
           case type
           when :nodata
             o << "#{prefix}#{txt_prob sinfo[:prob]} found no such record"
-          when :lame_referral
+          when :referral_lame
             o << "#{prefix}#{txt_prob sinfo[:prob]} resulted in a lame referral"
           when :exception
             o << "#{prefix}#{txt_prob sinfo[:prob]} resulted in an exception"
