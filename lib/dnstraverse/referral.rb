@@ -364,7 +364,7 @@ module DNSTraverse
     
     # process this Referral object:
     #   query each IP in @serverips and create a Response object
-    #   return an array of children
+    #   return an array of sets of children
     def process(args)
       raise "This Referral object has already been processed" if processed?
       raise "You need to resolve this Referral object" unless resolved?
@@ -372,13 +372,16 @@ module DNSTraverse
       unless (server) then
         # special case - no server means start from the top with the roots
         process_add_roots(args)
-        return @children.values.flatten
+        #return @children.values.flatten
+        return [ @children.values.flatten ] # one set
       end
       process_normal(args)
       # return a set of Referral objects that need to be processed
       # this is just using @serverips for ordering the children properly
       # because we numbered them all already
-      return @serverips.map {|ip| @children[ip] }.flatten.select {|x| x.is_a? Referral }
+      #return @serverips.map {|ip| @children[ip] }.flatten.select {|x| x.is_a? Referral }
+      # use serverips to keep ordering, skip key: entries
+      return @serverips.select {|ip| @children[ip] }.map {|ip| @children[ip] } # array of sets of children
     end
     
     def process_add_roots(args)
@@ -398,10 +401,9 @@ module DNSTraverse
     
     def process_normal(args)
       Log.debug { "process " + self.to_s }
-      childsets = @serverips.reject {|ip| ip =~ /^key:/ }.count
-      childset = 0
+      # two phases in order to calculate number of childsets
+      childsets = 0
       for ip in @serverips do
-        childset+= 1
         Log.debug { "Process normal #{ip}" }
         next if ip =~ /^key:/ # resolve failed on something
         m = nil
@@ -416,12 +418,19 @@ module DNSTraverse
                                       :bailiwick => @bailiwick,
                                       :infocache => @infocache, :ip => ip,
                                       :server => @server,
+                                      :parent_ip => @parent_ip,
                                       :decoded_query_cache => @decoded_query_cache)
         Log.debug { "Process normal #{ip} - done making response" }
         @responses[ip] = r
-        case r.status
-          when :restart, :referral then
-          Log.debug { "Process normal #{ip} - making referrals" }
+        if r.status == :restart or r.status == :referral then
+          childsets+= 1
+        end
+      end
+      childset = 0
+      @responses.each_pair do |ip, r|
+        if r.status == :restart or r.status == :referral then
+          childset+= 1
+          Log.debug { "Process normal #{ip} - making referrals (childset #{childset})" }
           refid =  childsets == 1 ? @refid :  "#{@refid}.#{childset}"
           refkey = childsets == 1 ? @refkey : "#{@refkey}.#{childsets}"
           @children[ip] = make_referrals(:qname => r.endname,

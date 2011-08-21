@@ -156,9 +156,10 @@ module DNSTraverse
           r = stack.pop
           r.answer_calculate
           report_progress r, :stage => :answer
-          r.cleanup(cleanup)
-          if @fast then
+          special = r.responses.values.map {|x| x.status }.include?(:referral_lame)
+          if @fast and r.status == :normal and (not special) then
             # store away in @answered hash so we can lookup later
+            # normal status only, i.e. not :loop or :noglue
             key = "#{r.qname}:#{r.qclass}:#{r.qtype}:#{r.server}:#{r.txt_ips_verbose}".downcase!
             Log.debug { "Fast mode cache store: #{key}" }
             @answered[key] = r
@@ -168,6 +169,7 @@ module DNSTraverse
             @seen[r.server.downcase].concat(r.ips_as_array)
             @seen[r.server.downcase].uniq!
           end
+          r.cleanup(cleanup)
           next
         end
         # ok time to process a new item
@@ -176,11 +178,11 @@ module DNSTraverse
           key = "#{r.qname}:#{r.qclass}:#{r.qtype}:#{r.server}:#{r.txt_ips_verbose}".downcase!
           Log.debug { "Fast mode cache lookup: #{key}" }
           # check for previously stored answer
-          # special case noglue situation, don't use previous answer
+          # special case noglue and loop situations
           # because attributes are complicated for stats collection and
           # we don't want to merge them together - creating the noglue
           # response object is fast anyway
-          if @answered.key?(key) and (not r.noglue?) then
+          if @answered.key?(key) and (not r.noglue?) and (not r.loop?) then
             Log.debug { "Fast method - completed #{r}" }
             r.parent.replace_child(r, @answered[key])
             report_progress r, :stage => :answer_fast
@@ -199,30 +201,31 @@ module DNSTraverse
         # put a placeholder on the stack
         stack << r << :calc_answer
         # get children, one set per IP address of this name server in array
-        children = r.process({})
+        children_sets = r.process({})
         # now report progress.  we already can tell whether this will be
         # completed in fast mode or not, so we report this information
-        total_sets = children.map { |c| c.parent_ip }.uniq.count
         # if there is more than one set (i.e. a DNS server has more than one
         # IP address and we had to do multiple queries), the children will
         # been numbered with an extra set digit, and we want to report this to
         # the user interface
         seen_parent_ip = Hash.new
-        children.each do |c|
-          if total_sets > 1 and not seen_parent_ip.include?(c.parent_ip) then
-            report_progress c, :stage => :new_referral_set
-            seen_parent_ip[c.parent_ip] = true
+        for children in children_sets do
+          children.each do |c|
+            if children_sets.length > 1 and not seen_parent_ip.include?(c.parent_ip) then
+              report_progress c, :stage => :new_referral_set
+              seen_parent_ip[c.parent_ip] = true
+            end
+            if @fast
+              key = "#{c.qname}:#{c.qclass}:#{c.qtype}:#{c.server}:#{c.txt_ips_verbose}".downcase!
+              stage = @answered.key?(key) ? :new_fast : :new
+            else
+              stage = :new
+            end
+            report_progress c, :stage => stage
           end
-          if @fast
-            key = "#{c.qname}:#{c.qclass}:#{c.qtype}:#{c.server}:#{c.txt_ips_verbose}".downcase!
-            stage = @answered.key?(key) ? :new_fast : :new
-          else
-            stage = :new
-          end
-          report_progress c, :stage => stage
         end
         # push the children on the stack
-        stack.push(*children.reverse)
+        stack.push(*children_sets.flatten.reverse)
       end
     end
     

@@ -120,7 +120,6 @@ module DNSTraverse
     end
     
     NOERROR = Dnsruby::RCode.NOERROR
-    NXDOMAIN = Dnsruby::RCode.NXDOMAIN
     
     def process
       return process_exception if @message.is_a? Exception
@@ -155,9 +154,9 @@ module DNSTraverse
         @error_message = "Server failure (SERVFAIL)"
         when Dnsruby::RCode::NXDOMAIN
         @error_message = "No such domain (NXDOMAIN)"
-        when Dnsruby::RCode.NOTIMP
+        when Dnsruby::RCode::NOTIMP
         @error_message = "Not implemented (NOTIMP)"
-        when Dnsruby::RCode.REFUSED
+        when Dnsruby::RCode::REFUSED
         @error_message = "Refused"
       else
         @error_message = @message.rcode.to_s

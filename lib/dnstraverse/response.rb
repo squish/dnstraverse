@@ -38,6 +38,7 @@ module DNSTraverse
       @infocache = InfoCache.new(args[:infocache]) # our infocache
       @starters = nil # initial servers for :referral/:restart
       @starters_bailiwick = nil # for initial servers for :referral/:restart
+      @parent_ip = args[:parent_ip] # passed in in case we get referral_lame, for the key
       evaluate
       update_stats_key
       return self
@@ -56,8 +57,10 @@ module DNSTraverse
     def update_stats_key
       r = @decoded_query
       @stats_key = "key:#{@status}:#{r.ip}:#{@server}:#{r.qname}:#{r.qclass}:#{r.qtype}"
-      if @stats == :exception and r.message.is_a? Exception then
+      if @status == :exception and r.message.is_a? Exception then
         @stats_key+= ":#{r.message}"
+      elsif @status == :referral_lame then
+        @stats_key+= ":#{@parent_ip}"
       end
     end
     

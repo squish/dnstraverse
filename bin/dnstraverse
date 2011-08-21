@@ -71,6 +71,10 @@ def progress_main(args)
       print " -- resolving"
     end
     print "\n"
+  when :new_referral_set then
+    refid = r.refid[0,r.refid.rindex('.')]
+    print "#{refid} #{r.parent_ip}"
+    print "\n"
   when :answer_fast then
     print o[:verbose] ? referral_txt_verbose(r) : referral_txt_normal(r)
     puts " -- completed earlier (#{r.replaced_by.refid})"
