@@ -94,7 +94,7 @@ module DNSTraverse
         @starters, @starters_bailiwick = @infocache.get_startservers(@decoded_query.endname)
       when :referral
         @starters, @starters_bailiwick = @infocache.get_startservers(@decoded_query.endname)
-        unless @decoded_query.bailiwick.nil? or @starters_bailiwick =~ /\.#{@decoded_query.bailiwick}$/
+        unless @decoded_query.bailiwick.nil? or @starters_bailiwick =~ /\.#{@decoded_query.bailiwick}$/i
           @status = :referral_lame
         end
         starternames = @starters.map { |x| x[:name].to_s.downcase }

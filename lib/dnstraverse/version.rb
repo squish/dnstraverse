@@ -2,7 +2,7 @@ module DNSTraverse
   module Version
     MAJOR = 0
     MINOR = 1
-    PATCH = 10
+    PATCH = 11
     STRING = "#{MAJOR}.#{MINOR}.#{PATCH}"
   end
 end
