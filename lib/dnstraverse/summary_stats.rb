@@ -95,6 +95,8 @@ module DNSTraverse
             o << "#{prefix}#{txt_prob sinfo[:prob]} found no glue"
           when :loop
             o << "#{prefix}#{txt_prob sinfo[:prob]} resulted in a loop"
+          when :cname_loop
+            o << "#{prefix}#{txt_prob sinfo[:prob]} resulted in a CNAME loop"
           else
             o << "#{prefix}#{txt_prob sinfo[:prob]} #{type}"
           end

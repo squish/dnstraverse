@@ -506,7 +506,9 @@ module DNSTraverse
           puts "Lame referral from #{referral.parent.server} " + 
             "(#{referral.parent_ip}) to #{where}"
         when :loop
-          puts "Loop encountered at #{response.server} "
+          puts "Loop encountered at #{response.server}"
+        when :cname_loop
+          puts "CNAME loop encountered at #{response.server}"
         when :error
           puts "#{response.error_message} at #{where}"
         when :nodata

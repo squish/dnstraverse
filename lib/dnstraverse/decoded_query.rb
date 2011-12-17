@@ -127,10 +127,12 @@ module DNSTraverse
       @cacheable_good, @cacheable_bad = msg_cacheable(@message, @bailiwick)
       @endname = msg_follow_cnames(@message, :qname => @qname, :qtype => @qtype,
                                    :bailiwick => @bailiwick)
-      return process_restart unless inside_bailiwick?(@endname)
+      return process_cname_loop if @endname.nil?
+      ## return process_restart unless inside_bailiwick?(@endname)
       return process_error if @message.rcode != NOERROR
       @answers = msg_answers?(@message, :qname => @endname, :qtype => qtype)
       return process_answered if @answers
+      return process_restart if @endname != @qname
       return process_nodata if @auth_soa.size > 0 or @auth_ns.size == 0
       return process_referral unless @auth_ns.empty?
       return process_restart
@@ -141,6 +143,10 @@ module DNSTraverse
       @exception_message = @message.to_s
     end
     
+    def process_cname_loop
+      @status = :cname_loop
+    end
+
     def process_restart
       @status = :restart
     end
@@ -181,17 +187,19 @@ module DNSTraverse
     
     def to_s
       case @status
-        when :error
+      when :error
         return "Error: #{@error_message}"
-        when :exception
+      when :exception
         return "Exception: #{@exception_message}"
-        when :nodata
+      when :cname_loop
+        return "CNANE loop"
+      when :nodata
         return "No data"
-        when :answered
+      when :answered
         return "Answered (#{@answers.size} entries)"
-        when :referral
+      when :referral
         return "Referral to #{@authoritynames.join(',')}"
-        when :restart
+      when :restart
         return "Query re-start with #{@endname}"
       end
     end

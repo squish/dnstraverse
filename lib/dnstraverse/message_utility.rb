@@ -144,23 +144,31 @@ module DNSTraverse
       return ns, soa, other      
     end
     
+    # follow any CNAMEs in the message and return the final name
+    # return nil if there is a loop
     def msg_follow_cnames(msg, args)
       name = args[:qname]
       type = args[:qtype]
       bw = args[:bailiwick].to_s
       bwend = ".#{args[:bailiwick]}"
+      seen = {}
       while true do
+        seen[name] = true
         return name if msg_answers?(msg, :qname => name, :qtype => type)
         if not ans = msg_answers?(msg, :qname => name, :qtype => 'CNAME') then
           return name
         end
         target = ans[0].domainname.to_s
         Log.debug { "CNAME encountered from #{name} to #{target}"}
-        if bw and (target.casecmp(bw) != 0 and name !~ /#{bwend}$/i) then
+        if name !~ /#{bwend}$/i then
           # target outside of bailiwick, don't follow any more CNAMEs.
           return target
         end
         name = target
+        if seen[name] then
+          Log.debug { "CNAME loop detected" }
+          return nil
+        end
       end
     end
     

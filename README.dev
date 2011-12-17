@@ -38,3 +38,6 @@ enterprise ruby
 - install to /usr/local/ruby-enterprise-1.8.7-2011.03
 - install apache as directed
 - set DocumentRoot to public dir to make rails app live
+
+interesting domains
+- IPv6 glue: kieboom.net
